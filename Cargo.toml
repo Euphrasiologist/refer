@@ -1,0 +1,15 @@
+[package]
+name = "refer"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = ["crates/refer-parse", "crates/refer-cli"]
+
+[dependencies]
+refer-parse = { path = "./crates/refer-parse", version = "0.1.0" }
+refer-cli = { path = "./crates/refer-cli", version = "0.1.0" }
+
+[[bin]]
+name = "ref"
+path = "src/main.rs"
