@@ -11,6 +11,7 @@ use std::io::{self, Read};
 use std::path::Path;
 use std::{fs::File, io::BufRead};
 
+use crate::error::ReferParseError;
 use crate::Result;
 
 // implement a reader and a writer
@@ -36,9 +37,9 @@ impl<R: io::Read> Reader<R> {
         Ok(Reader::new(File::open(path)?))
     }
     //
-    // pub fn records(&mut self) -> RecordsIter<R> {
-    //     RecordsIter::new(self)
-    // }
+    pub fn records(&mut self) -> RecordsIter<R> {
+        RecordsIter::new(self)
+    }
     //
     pub fn into_records(self) -> RecordsIntoIter<R> {
         RecordsIntoIter::new(self)
@@ -58,16 +59,29 @@ impl<R: io::Read> Reader<R> {
 
         loop {
             temp_buf.clear();
-            reader.read_line(&mut temp_buf)?;
-            // if the buffer is empty
-            if temp_buf.is_empty() {
-                return Ok(None);
+            let bytes = reader.read_line(&mut temp_buf)?;
+            if bytes == 0 {
+                // this is the EOF
+                if record == Record::default() {
+                    return Ok(None);
+                } else {
+                    return Ok(Some(record));
+                }
             }
+            // we've cleared the buffer and read the line
             if temp_buf.trim().is_empty() {
-                break;
+                // if the record is empty AND we hit a newline,
+                // just keep going, otherwise we break becasue
+                // we already processed a record :)
+                if record == Record::default() {
+                    continue;
+                } else {
+                    break;
+                }
             }
 
             let parsed = parse_input_line(temp_buf.clone(), &mut record);
+
             match parsed {
                 Ok(e) => match e {
                     Some(_) => continue,
@@ -78,11 +92,37 @@ impl<R: io::Read> Reader<R> {
         }
 
         // eprintln!("We are returning a record!");
+
         Ok(Some(record))
     }
 }
 
 //
+pub struct RecordsIter<'r, R: 'r> {
+    rdr: &'r mut Reader<R>,
+    rec: Record,
+}
+
+impl<'r, R: io::Read> RecordsIter<'r, R> {
+    fn new(rdr: &'r mut Reader<R>) -> RecordsIter<'r, R> {
+        RecordsIter {
+            rdr,
+            rec: Record::default(),
+        }
+    }
+}
+
+impl<'r, R: io::Read> Iterator for RecordsIter<'r, R> {
+    type Item = Result<Record>;
+
+    fn next(&mut self) -> Option<Result<Record>> {
+        match self.rdr.read_record() {
+            Ok(Some(r)) => Some(Ok(r)),
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
 
 pub struct RecordsIntoIter<R> {
     rdr: Reader<R>,
@@ -112,9 +152,10 @@ impl<R: io::Read> Iterator for RecordsIntoIter<R> {
 }
 
 // all optional to begin with
-#[derive(Default, Debug)]
+#[derive(Default, Debug, PartialEq)]
 pub struct Record {
-    author: Option<Author>,
+    // TOOD: this should probably be option<Vec<..>>
+    author: Vec<Author>,
     book: Option<String>,
     place: Option<String>,
     date: Option<String>,
@@ -145,8 +186,7 @@ fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>> {
     let bytes = input.as_bytes();
     // parse the authors
     if let Ok((_, author_list)) = parse_author_line(bytes) {
-        // eprintln!("an author line");
-        record.author = Some(author_list);
+        record.author.push(author_list);
         return Ok(Some(()));
     }
 
@@ -183,7 +223,7 @@ fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>> {
     ))(bytes)
     {
         Ok(e) => e,
-        Err(e) => return Err(Box::new(e.to_owned())),
+        Err(e) => return Err(Box::new(e)),
     };
 
     let tag = std::str::from_utf8(line_tag)?;
@@ -214,7 +254,7 @@ fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>> {
     Ok(Some(()))
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Author {
     first: String,
     middle: Option<String>,
@@ -227,16 +267,20 @@ impl Author {
 }
 
 // parse %A ...
-fn parse_author_tag(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_author_tag(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%A ")(i)
 }
 
 // parse %A Author 1 (are there any other special chars apart from -)
-fn parse_author_name(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>> {
-    separated_list0(tag(" "), take_while(|e| is_alphabetic(e) || e == b'-'))(i)
+fn parse_author_name(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>, ReferParseError> {
+    separated_list0(
+        tag(" "),
+        // TODO: there are probably other edge cases here
+        take_while(|e| is_alphabetic(e) || e == b'-' || e == b'.'),
+    )(i)
 }
 
-fn parse_author_line(line: &[u8]) -> IResult<&[u8], Author> {
+fn parse_author_line(line: &[u8]) -> IResult<&[u8], Author, ReferParseError> {
     let (input, parsed) = preceded(parse_author_tag, parse_author_name)(line)?;
     match parsed.len() {
         // TODO: remove these unwraps! Assumes we are all utf-8 good!
@@ -262,17 +306,17 @@ fn parse_author_line(line: &[u8]) -> IResult<&[u8], Author> {
 }
 
 // book title needs no further parsing
-fn parse_book_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_book_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%B ")(i)
 }
 // needs no further parsing
-fn parse_place_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_place_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%C ")(i)
 }
 // should be year (2023), and then month in letters
 // or 'in press'/'unknown'
 // maybe no further parsing required
-fn parse_date_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_date_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%D ")(i)
 }
 
@@ -280,83 +324,83 @@ fn parse_date_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
 // Where the work has editors and no authors, the names of the editors should be
 // given as %A fields and , (ed) or , (eds) should be appended to the last author.
 // possibly needs same treatment as Author.
-fn parse_editor_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_editor_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%E ")(i)
 }
 
 // %G:  US Government ordering number.
 // not needed for my purposes, no further parsing
-fn parse_government_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_government_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%G ")(i)
 }
 
 // %I:  The publisher (issuer).
-fn parse_issuer_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_issuer_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%I ")(i)
 }
 
 // %J:  For an article in a journal, the name of the journal.
-fn parse_journal_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_journal_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%J ")(i)
 }
 
 // %K:  Keywords to be used for searching.
-fn parse_keywords_tag(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_keywords_tag(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%K ")(i)
 }
 
-fn parse_all_keywords(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>> {
+fn parse_all_keywords(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>, ReferParseError> {
     separated_list0(tag(" "), take_while(|e| is_alphabetic(e)))(i)
 }
 
-fn parse_keywords_line(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>> {
+fn parse_keywords_line(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>, ReferParseError> {
     let (before, parsed) = preceded(parse_keywords_tag, parse_all_keywords)(i)?;
     Ok((before, parsed))
 }
 
 // %L:  Label.
-fn parse_label_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_label_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%L ")(i)
 }
 // %N:  Journal issue number.
-fn parse_issue_number_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_issue_number_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%N ")(i)
 }
 // %O:  Other information. This is usually printed at the end of the reference.
-fn parse_other_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_other_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%O ")(i)
 }
 // %P:  Page number. A range of pages can be specified as m-n.
-fn parse_page_number_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_page_number_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%P ")(i)
 }
 // %Q:  The name of the author, if the author is not a person. This will only be used if there are no %A fields. There can only be one %Q field.
-fn parse_author_np_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_author_np_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%Q ")(i)
 }
 
 // %R:  Technical report number.
-fn parse_report_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_report_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%R ")(i)
 }
 
 // %S:  Series name.
-fn parse_series_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_series_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%S ")(i)
 }
 
 // %T:  Title. For an article in a book or journal, this should be the title of the article.
-fn parse_title_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_title_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%T ")(i)
 }
 
 // %V:  Volume number of the journal or book.
-fn parse_volume_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_volume_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%V ")(i)
 }
 
 // %X:  Annotation.
-fn parse_annotation_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn parse_annotation_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%X ")(i)
 }
 
