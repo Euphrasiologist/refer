@@ -8,7 +8,7 @@ pub struct ReferParseError {
 impl ParseError<&[u8]> for ReferParseError {
     // on one line, we show the error code and the input that caused it
     fn from_error_kind(input: &[u8], kind: ErrorKind) -> Self {
-        let message = format!("{:?}: {:?}  ", kind, std::str::from_utf8(input).unwrap());
+        let message = format!("{:?}: {:?}", kind, std::str::from_utf8(input).unwrap());
         // println!("{}", message);
         ReferParseError { message }
     }

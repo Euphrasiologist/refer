@@ -14,38 +14,36 @@ use std::{fs::File, io::BufRead};
 use crate::error::ReferParseError;
 use crate::Result;
 
-// implement a reader and a writer
-// the reader should have an iterator to read the
-// actual records
-
-// haven't thought about a writer yet...
-
+/// A refer format reader which works on anything implementing [`io::Read`]
 pub struct Reader<R> {
-    /// The underlying reader
+    /// The underlying reader.
     rdr: io::BufReader<R>,
 }
 
 impl<R: io::Read> Reader<R> {
-    /// a new reader
     pub fn new(rdr: R) -> Reader<R> {
         Reader {
             rdr: io::BufReader::new(rdr),
         }
     }
-    //
+
+    /// Create a reader from a path, or anything which can be converted into
+    /// a path.
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Reader<File>> {
         Ok(Reader::new(File::open(path)?))
     }
-    //
+
+    /// A borrowed iterator over the records of a refer file.
     pub fn records(&mut self) -> RecordsIter<R> {
         RecordsIter::new(self)
     }
-    //
+
+    /// An owned iterator over the records of a refer file.
     pub fn into_records(self) -> RecordsIntoIter<R> {
         RecordsIntoIter::new(self)
     }
 
-    //
+    /// Read a single record from an input reader.
     fn read_record(&mut self) -> Result<Option<Record>> {
         // read the line
         // if line is empty/only contains spaces, end read
@@ -97,18 +95,24 @@ impl<R: io::Read> Reader<R> {
     }
 }
 
-//
+/// A borrowed iterator over the records of a refer file.
 pub struct RecordsIter<'r, R: 'r> {
+    /// The underlying reader
     rdr: &'r mut Reader<R>,
-    rec: Record,
 }
 
 impl<'r, R: io::Read> RecordsIter<'r, R> {
     fn new(rdr: &'r mut Reader<R>) -> RecordsIter<'r, R> {
-        RecordsIter {
-            rdr,
-            rec: Record::default(),
-        }
+        RecordsIter { rdr }
+    }
+    /// Return a reference to the underlying reader.
+    pub fn reader(&self) -> &Reader<R> {
+        self.rdr
+    }
+
+    /// Return a mutable reference to the underlying reader.
+    pub fn reader_mut(&mut self) -> &mut Reader<R> {
+        self.rdr
     }
 }
 
@@ -124,18 +128,29 @@ impl<'r, R: io::Read> Iterator for RecordsIter<'r, R> {
     }
 }
 
+/// An owned iterator over the records of a refer file.
 pub struct RecordsIntoIter<R> {
+    /// The underlying reader.
     rdr: Reader<R>,
-    rec: Record,
 }
 
 impl<R: io::Read> RecordsIntoIter<R> {
-    // new
     fn new(rdr: Reader<R>) -> RecordsIntoIter<R> {
-        RecordsIntoIter {
-            rdr,
-            rec: Record::default(),
-        }
+        RecordsIntoIter { rdr }
+    }
+    /// Return a reference to the underlying reader.
+    pub fn reader(&self) -> &Reader<R> {
+        &self.rdr
+    }
+
+    /// Return a mutable reference to the underlying reader.
+    pub fn reader_mut(&mut self) -> &mut Reader<R> {
+        &mut self.rdr
+    }
+
+    /// Drop this iterator and return the underlying reader.
+    pub fn into_reader(self) -> Reader<R> {
+        self.rdr
     }
 }
 
@@ -151,33 +166,43 @@ impl<R: io::Read> Iterator for RecordsIntoIter<R> {
     }
 }
 
-// all optional to begin with
+/// A refer record.
 #[derive(Default, Debug, PartialEq)]
 pub struct Record {
-    // TOOD: this should probably be option<Vec<..>>
-    author: Vec<Author>,
-    book: Option<String>,
-    place: Option<String>,
-    date: Option<String>,
-    editor: Option<String>,
-    government: Option<String>,
-    issuer: Option<String>,
-    journal: Option<String>,
-    keywords: Option<Vec<String>>,
-    label: Option<String>,
-    issue_number: Option<String>,
-    page_number: Option<String>, // probably needs to be parsed fully e.g. 1-100
-    other: Option<String>,
-    author_np: Option<String>,
-    report: Option<String>,
-    series: Option<String>,
-    title: Option<String>,
-    volume: Option<String>,
-    annotation: Option<String>,
+    // TODO: this should probably be option<Vec<..>>
+    /// The author list
+    pub author: Vec<Author>,
+    /// The name of the book
+    pub book: Option<String>,
+    /// The place
+    pub place: Option<String>,
+    /// Date of publication
+    pub date: Option<String>,
+    /// The editor
+    pub editor: Option<String>,
+    /// Weird field?
+    pub government: Option<String>,
+    ///
+    pub issuer: Option<String>,
+    ///
+    pub journal: Option<String>,
+    // TODO: implement this
+    pub keywords: Option<Vec<String>>,
+    pub label: Option<String>,
+    // TODO: this should be an integer
+    pub issue_number: Option<String>,
+    pub page_number: Option<String>, // probably needs to be parsed fully e.g. 1-100
+    pub other: Option<String>,
+    pub author_np: Option<String>,
+    pub report: Option<String>,
+    pub series: Option<String>,
+    pub title: Option<String>,
+    pub volume: Option<String>,
+    pub annotation: Option<String>,
 }
 
 // want to check for duplication at some point.
-fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>> {
+pub fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>> {
     // we need something here to see if a record is: XXX\n
     // and if it is, we need to output this here so the parent function
     // can exit the loop, rather than going to the next iteration and not
@@ -255,15 +280,10 @@ fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>> {
 }
 
 #[derive(Debug, PartialEq)]
-struct Author {
-    first: String,
-    middle: Option<String>,
-    last: String,
-}
-
-impl Author {
-    // we'll need to somehow format authors for printing
-    fn format_author() {}
+pub struct Author {
+    pub first: String,
+    pub middle: Option<String>,
+    pub last: String,
 }
 
 // parse %A ...
