@@ -22,14 +22,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut writer = Writer::new(Vec::new());
     // entry 1
-    writer.write_record(vec!["%A Author one".as_bytes(), "%A Author two".as_bytes()])?;
-    // entry 2
     writer.write_record(vec![
         "%A Author three".as_bytes(),
         "%A Author four".as_bytes(),
+        "%B Time and tide".as_bytes(),
+        "%K keyone keytwo keythree".as_bytes(),
+        "%V 123".as_bytes(),
     ])?;
+    // entry 2
+    writer.write_record(vec!["%A Author one".as_bytes(), "%A Author two".as_bytes()])?;
 
-    eprintln!(
+    println!(
         "{}",
         std::str::from_utf8(&writer.wtr.into_inner()?).unwrap()
     );

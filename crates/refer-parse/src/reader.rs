@@ -370,7 +370,7 @@ fn parse_keywords_tag(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
 }
 
 fn parse_all_keywords(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>, ReferParseError> {
-    separated_list0(tag(" "), take_while(|e| is_alphabetic(e)))(i)
+    separated_list0(tag(" "), take_while(is_alphabetic))(i)
 }
 
 fn parse_keywords_line(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>, ReferParseError> {
