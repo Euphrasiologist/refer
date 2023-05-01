@@ -13,15 +13,18 @@ pub struct Writer<W: io::Write> {
     pub wtr: io::BufWriter<W>,
 }
 
+impl Writer<File> {
+    //
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Writer<File>> {
+        Ok(Writer::new(File::create(path)?))
+    }
+}
+
 impl<W: io::Write> Writer<W> {
     pub fn new(wtr: W) -> Writer<W> {
         Writer {
             wtr: io::BufWriter::new(wtr),
         }
-    }
-    //
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Writer<File>> {
-        Ok(Writer::new(File::create(path)?))
     }
     //
     fn check_field(&self, field: String, record: &mut Record) -> Result<()> {

@@ -20,17 +20,19 @@ pub struct Reader<R> {
     rdr: io::BufReader<R>,
 }
 
+impl Reader<File> {
+    /// Create a reader from a path, or anything which can be converted into
+    /// a path.
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Reader<File>> {
+        Ok(Reader::new(File::open(path)?))
+    }
+}
+
 impl<R: io::Read> Reader<R> {
     pub fn new(rdr: R) -> Reader<R> {
         Reader {
             rdr: io::BufReader::new(rdr),
         }
-    }
-
-    /// Create a reader from a path, or anything which can be converted into
-    /// a path.
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Reader<File>> {
-        Ok(Reader::new(File::open(path)?))
     }
 
     /// A borrowed iterator over the records of a refer file.

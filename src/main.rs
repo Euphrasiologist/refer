@@ -12,16 +12,16 @@ use refer::Reader;
 use refer::Writer;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // let mut reader = Reader::<&[u8]>::from_path("./assets/test.refer")?;
-    let mut reader =
-        Reader::new("\n\n\n\n%A Molly Carter-Brown\n%B An amazing book\n\n".as_bytes());
+    let mut reader = Reader::from_path("./assets/test.refer")?;
+    // let mut reader =
+        // Reader::new("\n\n\n\n%A Molly Carter-Brown\n%B An amazing book\n\n".as_bytes());
 
     for record in reader.records() {
         eprintln!("{:#?}", record?);
     }
 
     // let mut writer = Writer::new(Vec::new());
-    let mut writer = Writer::<Vec<u8>>::from_path("./test.refer")?;
+    let mut writer = Writer::from_path("./test.refer")?;
     // entry 1
     writer.write_record([
         "%A Author three".as_bytes(),
