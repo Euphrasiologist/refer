@@ -8,8 +8,8 @@
 
 // set up $HOME/.refer/ directory
 
-use refer_parse::Reader;
-use refer_parse::Writer;
+use refer::Reader;
+use refer::Writer;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let mut reader = Reader::<&[u8]>::from_path("./assets/test.refer")?;
@@ -20,9 +20,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("{:#?}", record?);
     }
 
-    let mut writer = Writer::new(Vec::new());
+    // let mut writer = Writer::new(Vec::new());
+    let mut writer = Writer::<Vec<u8>>::from_path("./test.refer")?;
     // entry 1
-    writer.write_record(vec![
+    writer.write_record([
         "%A Author three".as_bytes(),
         "%A Author four".as_bytes(),
         "%B Time and tide".as_bytes(),
@@ -32,10 +33,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // entry 2
     writer.write_record(vec!["%A Author one".as_bytes(), "%A Author two".as_bytes()])?;
 
-    println!(
-        "{}",
-        std::str::from_utf8(&writer.wtr.into_inner()?).unwrap()
-    );
+    // println!("{}", std::str::from_utf8(&writer.into_inner()?).unwrap());
+
+    writer.flush()?;
 
     Ok(())
 }
