@@ -13,7 +13,7 @@ pub struct Writer<W: io::Write> {
     pub wtr: io::BufWriter<W>,
 }
 
-impl<W: io::Write + std::marker::Send + std::fmt::Debug> Writer<W> {
+impl<W: io::Write> Writer<W> {
     pub fn new(wtr: W) -> Writer<W> {
         Writer {
             wtr: io::BufWriter::new(wtr),
