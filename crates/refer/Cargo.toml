@@ -2,6 +2,13 @@
 name = "refer"
 version = "0.1.0"
 edition = "2021"
+description = "Parse and write Refer bibliography files."
+license = "MIT"
+authors = ["Max Carter-Brown"]
+homepage = "https://github.com/Euphrasiologist/refer/tree/main/crates/refer"
+repository = "https://github.com/Euphrasiologist/refer/tree/main/crates/refer"
+keywords = ["parser", "bibliography", "refer", "groff", "troff"]
+categories = ["parser-implementations"]
 
 [dependencies]
 nom = "7.1.3"
