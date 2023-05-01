@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut writer = Writer::from_path("./test.refer")?;
     // entry 1
     writer.write_record([
-        "%A Author three".as_bytes(),
+        "%A Author three three three".as_bytes(),
         "%A Author four".as_bytes(),
         "%B Time and tide".as_bytes(),
         "%K keyone keytwo keythree".as_bytes(),

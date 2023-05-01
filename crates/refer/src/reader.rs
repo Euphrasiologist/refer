@@ -12,7 +12,10 @@ use std::path::Path;
 use std::{fs::File, io::BufRead};
 
 use crate::error::ReferParseError;
-use crate::Result;
+use crate::{
+    record::{Author, Record},
+    Result,
+};
 
 /// A refer format reader which works on anything implementing [`io::Read`]
 pub struct Reader<R> {
@@ -168,41 +171,6 @@ impl<R: io::Read> Iterator for RecordsIntoIter<R> {
     }
 }
 
-/// A refer record.
-#[derive(Default, Debug, PartialEq)]
-pub struct Record {
-    // TODO: this should probably be option<Vec<..>>
-    /// The author list
-    pub author: Vec<Author>,
-    /// The name of the book
-    pub book: Option<String>,
-    /// The place
-    pub place: Option<String>,
-    /// Date of publication
-    pub date: Option<String>,
-    /// The editor
-    pub editor: Option<String>,
-    /// Weird field?
-    pub government: Option<String>,
-    ///
-    pub issuer: Option<String>,
-    ///
-    pub journal: Option<String>,
-    // TODO: implement this
-    pub keywords: Option<Vec<String>>,
-    pub label: Option<String>,
-    // TODO: this should be an integer
-    pub issue_number: Option<String>,
-    pub page_number: Option<String>, // probably needs to be parsed fully e.g. 1-100
-    pub other: Option<String>,
-    pub author_np: Option<String>,
-    pub report: Option<String>,
-    pub series: Option<String>,
-    pub title: Option<String>,
-    pub volume: Option<String>,
-    pub annotation: Option<String>,
-}
-
 // want to check for duplication at some point.
 pub fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>> {
     // we need something here to see if a record is: XXX\n
@@ -281,13 +249,6 @@ pub fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>
     Ok(Some(()))
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Author {
-    pub first: String,
-    pub middle: Option<String>,
-    pub last: String,
-}
-
 // parse %A ...
 fn parse_author_tag(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
     tag("%A ")(i)
@@ -322,8 +283,13 @@ fn parse_author_line(line: &[u8]) -> IResult<&[u8], Author, ReferParseError> {
                 last: std::str::from_utf8(parsed[2]).unwrap().to_owned(),
             },
         )),
-        // proper error here...
-        _ => panic!("Author incorrectly specified: Forename Option<Middle> Surname"),
+        e => Err(nom::Err::Error(crate::error::ReferParseError {
+            // I realise this isn't totally inclusive
+            message: format!(
+                "Name is of length: {}, should be formatted <Author> <Middle> <Surname>",
+                e
+            ),
+        })),
     }
 }
 
