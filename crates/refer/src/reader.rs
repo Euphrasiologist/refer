@@ -11,10 +11,10 @@ use std::io::{self, Read};
 use std::path::Path;
 use std::{fs::File, io::BufRead};
 
-use crate::error::ReferParseError;
 use crate::{
+    error::{Error, ErrorKind, Result},
     record::{Author, Record},
-    Result,
+    str_from_utf8,
 };
 
 /// A refer format reader which works on anything implementing [`io::Read`]
@@ -94,8 +94,6 @@ impl<R: io::Read> Reader<R> {
             }
         }
 
-        // eprintln!("We are returning a record!");
-
         Ok(Some(record))
     }
 }
@@ -171,28 +169,32 @@ impl<R: io::Read> Iterator for RecordsIntoIter<R> {
     }
 }
 
-// want to check for duplication at some point.
+/// Parse a single line from an input string into a mutable `Record` instance.
 pub fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>> {
-    // we need something here to see if a record is: XXX\n
-    // and if it is, we need to output this here so the parent function
-    // can exit the loop, rather than going to the next iteration and not
-    // giving us back the record!
-
     let bytes = input.as_bytes();
     // parse the authors
-    if let Ok((_, author_list)) = parse_author_line(bytes) {
+    // TODO: this is kinda annoying as we don't get these specific error from within,
+    // we disregard it basically whether the line contains a %A tag or whether is actually
+    // errors.
+    if let Err(e) = parse_author_line(bytes) {
+        if let ErrorKind::Author(_) = e.kind() {
+            return Err(e);
+        }
+    }
+
+    if let Ok(author_list) = parse_author_line(bytes) {
         record.author.push(author_list);
         return Ok(Some(()));
     }
-
-    if let Ok((_, keywords)) = parse_keywords_line(bytes) {
-        // eprintln!("keywords");
-        let keywords_str: Vec<String> = keywords
+    
+    // TODO: handle this error separately, somehow
+    if let Ok(keywords) = parse_keywords_line(bytes) {
+        let keywords_str: Result<Vec<String>> = keywords
             .iter()
-            // TODO: fix this unwrap
-            .map(|e| std::str::from_utf8(e).unwrap().to_owned())
+            .map(|e| str_from_utf8(e).map(|e| e.to_owned()))
             .collect();
-        record.keywords = Some(keywords_str);
+
+        record.keywords = Some(keywords_str?);
         return Ok(Some(()));
     }
 
@@ -218,13 +220,32 @@ pub fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>
     ))(bytes)
     {
         Ok(e) => e,
-        Err(e) => return Err(Box::new(e)),
+        Err(e) => match e {
+            nom::Err::Incomplete(_) => {
+                return Err(Error::new(ErrorKind::NomError(
+                    "In parsing the fields, an incomplete error was raised.".to_string(),
+                )))
+            }
+            nom::Err::Error(e) => {
+                return Err(Error::new(ErrorKind::NomError(format!(
+                    "Line parsing error with code ({}): {}",
+                    e.code.description(),
+                    str_from_utf8(e.input)?
+                ))))
+            }
+            nom::Err::Failure(e) => {
+                return Err(Error::new(ErrorKind::NomError(format!(
+                    "Line parsing failure with code ({}): {}",
+                    e.code.description(),
+                    str_from_utf8(e.input)?
+                ))))
+            }
+        },
     };
 
-    let tag = std::str::from_utf8(line_tag)?;
-    // eprintln!("Line tag: {}", tag);
-    let parsed = String::from_utf8(parsed.to_vec())?.trim().to_string();
-    // eprintln!("Parsed bit: {}", parsed);
+    let tag = str_from_utf8(line_tag)?;
+
+    let parsed = str_from_utf8(parsed)?.trim().to_string();
 
     match tag {
         "%B " => record.book = Some(parsed),
@@ -244,18 +265,19 @@ pub fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>
         "%T " => record.title = Some(parsed),
         "%V " => record.volume = Some(parsed),
         "%X " => record.annotation = Some(parsed),
-        _ => panic!(""),
+        // should never get here
+        t => return Err(Error::new(ErrorKind::TagNotFound(t.to_string()))),
     }
     Ok(Some(()))
 }
 
 // parse %A ...
-fn parse_author_tag(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_author_tag(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%A ")(i)
 }
 
 // parse %A Author 1 (are there any other special chars apart from -)
-fn parse_author_name(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>, ReferParseError> {
+fn parse_author_name(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>> {
     separated_list0(
         tag(" "),
         // TODO: there are probably other edge cases here
@@ -263,48 +285,64 @@ fn parse_author_name(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>, ReferParseError> {
     )(i)
 }
 
-fn parse_author_line(line: &[u8]) -> IResult<&[u8], Author, ReferParseError> {
-    let (input, parsed) = preceded(parse_author_tag, parse_author_name)(line)?;
+fn parse_author_line(line: &[u8]) -> Result<Author> {
+    let (_, parsed) = match preceded(parse_author_tag, parse_author_name)(line) {
+        Ok(p) => p,
+        Err(e) => match e {
+            nom::Err::Incomplete(_) => {
+                return Err(Error::new(ErrorKind::NomError(
+                    "In parsing the fields, an incomplete error was raised.".to_string(),
+                )))
+            }
+            nom::Err::Error(e) => {
+                return Err(Error::new(ErrorKind::NomError(format!(
+                    "Line parsing error with code ({}): {}",
+                    e.code.description(),
+                    str_from_utf8(e.input)?
+                ))))
+            }
+            nom::Err::Failure(e) => {
+                return Err(Error::new(ErrorKind::NomError(format!(
+                    "Line parsing failure with code ({}): {}",
+                    e.code.description(),
+                    str_from_utf8(e.input)?
+                ))))
+            }
+        },
+    };
     match parsed.len() {
-        // TODO: remove these unwraps! Assumes we are all utf-8 good!
-        2 => Ok((
-            input,
-            Author {
-                first: std::str::from_utf8(parsed[0]).unwrap().to_owned(),
-                middle: None,
-                last: std::str::from_utf8(parsed[1]).unwrap().to_owned(),
-            },
-        )),
-        3 => Ok((
-            input,
-            Author {
-                first: std::str::from_utf8(parsed[0]).unwrap().to_owned(),
-                middle: Some(std::str::from_utf8(parsed[1]).unwrap().to_owned()),
-                last: std::str::from_utf8(parsed[2]).unwrap().to_owned(),
-            },
-        )),
-        e => Err(nom::Err::Error(crate::error::ReferParseError {
-            // I realise this isn't totally inclusive
-            message: format!(
-                "Name is of length: {}, should be formatted <Author> <Middle> <Surname>",
+        2 => Ok(Author {
+            first: str_from_utf8(parsed[0])?.to_owned(),
+            middle: None,
+            last: str_from_utf8(parsed[1])?.to_owned(),
+        }),
+        3 => Ok(Author {
+            first: str_from_utf8(parsed[0])?.to_owned(),
+            middle: Some(str_from_utf8(parsed[1])?.to_owned()),
+            last: str_from_utf8(parsed[2])?.to_owned(),
+        }),
+        e => {
+            return Err(Error::new(ErrorKind::Author(format!(
+                "Input error: {}. `Number of names should be of length 2 or 3, found {}",
+                str_from_utf8(line)?,
                 e
-            ),
-        })),
+            ))))
+        }
     }
 }
 
 // book title needs no further parsing
-fn parse_book_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_book_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%B ")(i)
 }
 // needs no further parsing
-fn parse_place_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_place_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%C ")(i)
 }
 // should be year (2023), and then month in letters
 // or 'in press'/'unknown'
 // maybe no further parsing required
-fn parse_date_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_date_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%D ")(i)
 }
 
@@ -312,89 +350,116 @@ fn parse_date_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
 // Where the work has editors and no authors, the names of the editors should be
 // given as %A fields and , (ed) or , (eds) should be appended to the last author.
 // possibly needs same treatment as Author.
-fn parse_editor_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_editor_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%E ")(i)
 }
 
 // %G:  US Government ordering number.
 // not needed for my purposes, no further parsing
-fn parse_government_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_government_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%G ")(i)
 }
 
 // %I:  The publisher (issuer).
-fn parse_issuer_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_issuer_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%I ")(i)
 }
 
 // %J:  For an article in a journal, the name of the journal.
-fn parse_journal_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_journal_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%J ")(i)
 }
 
 // %K:  Keywords to be used for searching.
-fn parse_keywords_tag(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_keywords_tag(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%K ")(i)
 }
 
-fn parse_all_keywords(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>, ReferParseError> {
+fn parse_all_keywords(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>> {
     separated_list0(tag(" "), take_while(is_alphabetic))(i)
 }
 
-fn parse_keywords_line(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>, ReferParseError> {
-    let (before, parsed) = preceded(parse_keywords_tag, parse_all_keywords)(i)?;
-    Ok((before, parsed))
+fn parse_keywords_line(i: &[u8]) -> Result<Vec<&[u8]>> {
+    let (_, parsed) = match preceded(parse_keywords_tag, parse_all_keywords)(i) {
+        Ok(p) => p,
+        Err(e) => match e {
+            nom::Err::Incomplete(_) => {
+                return Err(Error::new(ErrorKind::Keyword(
+                    "In parsing the fields, an incomplete error was raised.".to_string(),
+                )))
+            }
+            nom::Err::Error(e) => {
+                return Err(Error::new(ErrorKind::Keyword(format!(
+                    "Keyword line parsing error with code ({}): {}",
+                    e.code.description(),
+                    str_from_utf8(e.input)?
+                ))))
+            }
+            nom::Err::Failure(e) => {
+                return Err(Error::new(ErrorKind::Keyword(format!(
+                    "Line parsing failure with code ({}): {}",
+                    e.code.description(),
+                    str_from_utf8(e.input)?
+                ))))
+            }
+        },
+    };
+
+    Ok(parsed)
 }
 
 // %L:  Label.
-fn parse_label_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_label_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%L ")(i)
 }
 // %N:  Journal issue number.
-fn parse_issue_number_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_issue_number_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%N ")(i)
 }
 // %O:  Other information. This is usually printed at the end of the reference.
-fn parse_other_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_other_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%O ")(i)
 }
 // %P:  Page number. A range of pages can be specified as m-n.
-fn parse_page_number_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_page_number_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%P ")(i)
 }
 // %Q:  The name of the author, if the author is not a person. This will only be used if there are no %A fields. There can only be one %Q field.
-fn parse_author_np_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_author_np_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%Q ")(i)
 }
 
 // %R:  Technical report number.
-fn parse_report_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_report_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%R ")(i)
 }
 
 // %S:  Series name.
-fn parse_series_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_series_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%S ")(i)
 }
 
 // %T:  Title. For an article in a book or journal, this should be the title of the article.
-fn parse_title_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_title_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%T ")(i)
 }
 
 // %V:  Volume number of the journal or book.
-fn parse_volume_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_volume_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%V ")(i)
 }
 
 // %X:  Annotation.
-fn parse_annotation_line(i: &[u8]) -> IResult<&[u8], &[u8], ReferParseError> {
+fn parse_annotation_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%X ")(i)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_single_record() {}
 
     #[test]
     fn test_parse_author_tag() {
@@ -415,7 +480,7 @@ mod tests {
     #[test]
     fn test_parse_author_line() {
         let author_string = b"%A Max Carter-Brown";
-        let (_, parsed) = parse_author_line(author_string).unwrap();
+        let parsed = parse_author_line(author_string).unwrap();
 
         assert_eq!(parsed.first, "Max");
         assert_eq!(parsed.last, "Carter-Brown");
@@ -424,7 +489,7 @@ mod tests {
     #[test]
     fn test_keywords_line() {
         let keywords = b"%K keyword another word";
-        let (_, parsed) = parse_keywords_line(keywords).unwrap();
+        let parsed = parse_keywords_line(keywords).unwrap();
         assert_eq!(
             parsed,
             &[
