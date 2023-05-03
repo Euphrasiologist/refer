@@ -39,6 +39,8 @@ pub enum ErrorKind {
     Author(String),
     /// If the keyword parsing goes awry
     Keyword(String),
+    /// For fetching the type of the record
+    RecordType(String),
 }
 
 impl From<io::Error> for Error {
@@ -75,8 +77,15 @@ impl fmt::Display for Error {
             ErrorKind::Author(ref err) => {
                 write!(f, "Author field incorrectly specified: {}", err)
             }
-            ErrorKind::Keyword(ref err ) => {
+            ErrorKind::Keyword(ref err) => {
                 write!(f, "Keyword field incorrectly specified: {}", err)
+            }
+            ErrorKind::RecordType(ref err) => {
+                write!(
+                    f,
+                    "Record type cannot be both book and journal, or neither: {}",
+                    err
+                )
             }
         }
     }

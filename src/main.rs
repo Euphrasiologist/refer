@@ -9,33 +9,19 @@
 // set up $HOME/.refer/ directory
 
 use refer::Reader;
-use refer::Writer;
+use refer::StyleBuilder;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut reader = Reader::from_path("./assets/test.refer")?;
-    // let mut reader =
-    // Reader::new("\n\n\n\n%A Molly Carter-Brown\n%B An amazing book\n\n".as_bytes());
+    let mut reader = Reader::new(
+        "%A Brown, M.\n%A Carter M.\n%B a book\n%D 1972\n%C Chicago\n%T Our greatest book\n%I Oxford University Press\n%V volume 10"
+            .as_bytes(),
+    );
 
     for record in reader.records() {
-        eprintln!("{:#?}", record?);
+        let rec = record?;
+        eprintln!("{}", &rec);
+        eprintln!("{}", StyleBuilder::new(rec).format()?);
     }
-
-    // // let mut writer = Writer::new(Vec::new());
-    // let mut writer = Writer::from_path("./test.refer")?;
-    // // entry 1
-    // writer.write_record(vec![
-    //     "%A Author three".as_bytes(),
-    //     "%A Author four".as_bytes(),
-    //     "%B Time and tide".as_bytes(),
-    //     "%K keyone keytwo keythree".as_bytes(),
-    //     "%V 123".as_bytes(),
-    // ])?;
-    // // entry 2
-    // writer.write_record(vec!["%A Author one".as_bytes(), "%A Author two".as_bytes()])?;
-
-    // // println!("{}", std::str::from_utf8(&writer.into_inner()?).unwrap());
-
-    // writer.flush()?;
 
     Ok(())
 }

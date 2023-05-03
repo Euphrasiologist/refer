@@ -8,6 +8,7 @@ use crate::{error::Result, reader::parse_input_line, record::Record};
 
 pub struct Writer<W: io::Write> {
     pub wtr: io::BufWriter<W>,
+    line_no: u64,
 }
 
 impl Writer<File> {
@@ -21,11 +22,12 @@ impl<W: io::Write> Writer<W> {
     pub fn new(wtr: W) -> Writer<W> {
         Writer {
             wtr: io::BufWriter::new(wtr),
+            line_no: 0,
         }
     }
     //
     fn check_field(&self, field: String, record: &mut Record) -> Result<()> {
-        parse_input_line(field, record)?;
+        parse_input_line(field, record, self.line_no)?;
         Ok(())
     }
     //
@@ -36,6 +38,7 @@ impl<W: io::Write> Writer<W> {
     {
         let mut record_holder = Record::default();
         for field in record {
+            self.line_no += 1;
             let field_string = String::from_utf8(field.into()).unwrap();
             self.check_field(field_string, &mut record_holder)?;
         }

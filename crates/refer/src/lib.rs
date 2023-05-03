@@ -1,7 +1,10 @@
 mod error;
 pub mod reader;
 mod record;
+
 pub use reader::Reader;
+pub mod style;
+pub use style::StyleBuilder;
 
 pub mod writer;
 pub use writer::Writer;

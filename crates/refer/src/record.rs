@@ -1,7 +1,19 @@
 use std::fmt::Display;
 
+use crate::error::{Error, ErrorKind, Result};
+
+/// The type of the record, only books and journals are
+/// supported for formatting. See [`crate::style::StyleBuilder`]
+#[derive(Default, Debug, PartialEq, Clone)]
+pub enum RecordType {
+    #[default]
+    None,
+    Book,
+    Journal,
+}
+
 /// A refer record.
-#[derive(Default, Debug, PartialEq)]
+#[derive(Default, Debug, PartialEq, Clone)]
 pub struct Record {
     // TODO: this should probably be option<Vec<..>>
     /// The author list
@@ -13,7 +25,7 @@ pub struct Record {
     /// Date of publication
     pub date: Option<String>,
     /// The editor
-    pub editor: Option<String>,
+    pub editor: Vec<String>,
     /// US Government ordering number.
     pub government: Option<String>,
     /// The publisher (issuer)
@@ -43,37 +55,50 @@ pub struct Record {
     pub volume: Option<String>,
     /// Annotation.
     pub annotation: Option<String>,
+    /// The type of the record, the default is [`RecordType::None`].
+    pub rec_type: RecordType,
+}
+
+impl Record {
+    /// Return the record type of the record. At the moment, only
+    /// books and journal types are supported.
+    pub fn record_type(&self) -> Result<RecordType> {
+        let book = self.book.is_some();
+        let journal = self.journal.is_some();
+
+        match (book, journal) {
+            (true, true) => Err(Error::new(ErrorKind::RecordType(
+                "Book and Journal both set".into(),
+            ))),
+            (true, false) => Ok(RecordType::Book),
+            (false, true) => Ok(RecordType::Journal),
+            (false, false) => Err(Error::new(ErrorKind::RecordType(
+                "Neither Book nor Journal are set".into(),
+            ))),
+        }
+    }
 }
 
 /// The author field needs to be parsed specially as there can be
-/// multiple fields, and they are in a specific format
-#[derive(Debug, PartialEq)]
+/// multiple fields, and they are in a specific format.
+///
+/// e.g. Brown, A. B.
+#[derive(Debug, PartialEq, Clone)]
 pub struct Author {
-    /// First name
-    pub first: String,
-    /// Middle name
-    pub middle: Option<String>,
     /// Last name
     pub last: String,
+    /// And the rest of the form: A. B. C.
+    pub rest: String,
 }
 
 impl Display for Author {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "%A {}{} {}",
-            self.first,
-            match &self.middle {
-                Some(e) => format!(" {}", e),
-                None => "".into(),
-            },
-            self.last
-        )
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "%A {}, {}", self.last, self.rest)
     }
 }
 
 impl Display for Record {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         // %A line
         match self.author.is_empty() {
             true => write!(f, "")?,
@@ -102,10 +127,18 @@ impl Display for Record {
             Some(d) => writeln!(f, "%D {}", d)?,
             None => write!(f, "")?,
         };
-        // %D line
-        match &self.editor {
-            Some(e) => writeln!(f, "%E {}", e)?,
-            None => write!(f, "")?,
+        // %E line
+        match &self.editor.is_empty() {
+            true => write!(f, "")?,
+            false => {
+                let mut editor_list = String::new();
+                for el in &self.editor {
+                    editor_list += "%E ";
+                    editor_list += el;
+                    editor_list += "\n";
+                }
+                write!(f, "{}", editor_list)?
+            }
         };
         // %G line
         match &self.government {

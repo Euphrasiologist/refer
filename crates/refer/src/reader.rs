@@ -21,6 +21,7 @@ use crate::{
 pub struct Reader<R> {
     /// The underlying reader.
     rdr: io::BufReader<R>,
+    line: u64,
 }
 
 impl Reader<File> {
@@ -35,6 +36,7 @@ impl<R: io::Read> Reader<R> {
     pub fn new(rdr: R) -> Reader<R> {
         Reader {
             rdr: io::BufReader::new(rdr),
+            line: 0,
         }
     }
 
@@ -61,6 +63,7 @@ impl<R: io::Read> Reader<R> {
         let mut temp_buf = String::new();
 
         loop {
+            self.line += 1;
             temp_buf.clear();
             let bytes = reader.read_line(&mut temp_buf)?;
             if bytes == 0 {
@@ -83,7 +86,7 @@ impl<R: io::Read> Reader<R> {
                 }
             }
 
-            let parsed = parse_input_line(temp_buf.clone(), &mut record);
+            let parsed = parse_input_line(temp_buf.clone(), &mut record, self.line);
 
             match parsed {
                 Ok(e) => match e {
@@ -124,7 +127,10 @@ impl<'r, R: io::Read> Iterator for RecordsIter<'r, R> {
 
     fn next(&mut self) -> Option<Result<Record>> {
         match self.rdr.read_record() {
-            Ok(Some(r)) => Some(Ok(r)),
+            Ok(Some(r)) => {
+                self.rdr.line += 1;
+                Some(Ok(r))
+            }
             Ok(None) => None,
             Err(e) => Some(Err(e)),
         }
@@ -162,7 +168,10 @@ impl<R: io::Read> Iterator for RecordsIntoIter<R> {
 
     fn next(&mut self) -> Option<Result<Record>> {
         match self.rdr.read_record() {
-            Ok(Some(r)) => Some(Ok(r)),
+            Ok(Some(r)) => {
+                self.rdr.line += 1;
+                Some(Ok(r))
+            }
             Ok(None) => None,
             Err(e) => Some(Err(e)),
         }
@@ -170,24 +179,21 @@ impl<R: io::Read> Iterator for RecordsIntoIter<R> {
 }
 
 /// Parse a single line from an input string into a mutable `Record` instance.
-pub fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>> {
+pub fn parse_input_line(input: String, record: &mut Record, line_no: u64) -> Result<Option<()>> {
     let bytes = input.as_bytes();
     // parse the authors
-    // TODO: this is kinda annoying as we don't get these specific error from within,
-    // we disregard it basically whether the line contains a %A tag or whether is actually
-    // errors.
-    if let Err(e) = parse_author_line(bytes) {
+    if let Err(e) = parse_author_line(bytes, line_no) {
         if let ErrorKind::Author(_) = e.kind() {
             return Err(e);
         }
     }
 
-    if let Ok(author_list) = parse_author_line(bytes) {
+    if let Ok(author_list) = parse_author_line(bytes, line_no) {
         record.author.push(author_list);
         return Ok(Some(()));
     }
-    
-    // TODO: handle this error separately, somehow
+
+    // TODO: handle this error separately, somehow..?
     if let Ok(keywords) = parse_keywords_line(bytes) {
         let keywords_str: Result<Vec<String>> = keywords
             .iter()
@@ -198,12 +204,16 @@ pub fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>
         return Ok(Some(()));
     }
 
+    if let Ok((editor, _)) = parse_editor_line(bytes) {
+        record.editor.push(str_from_utf8(editor)?.trim().into());
+        return Ok(Some(()));
+    }
+
     // deal with the rest in one big alt
     let (parsed, line_tag) = match alt((
         parse_book_line,
         parse_place_line,
         parse_date_line,
-        parse_editor_line,
         parse_government_line,
         parse_issuer_line,
         parse_journal_line,
@@ -222,20 +232,23 @@ pub fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>
         Ok(e) => e,
         Err(e) => match e {
             nom::Err::Incomplete(_) => {
-                return Err(Error::new(ErrorKind::NomError(
-                    "In parsing the fields, an incomplete error was raised.".to_string(),
-                )))
+                return Err(Error::new(ErrorKind::NomError(format!(
+                    "At line: {}. In parsing the fields, an incomplete error was raised.",
+                    line_no
+                ))))
             }
             nom::Err::Error(e) => {
                 return Err(Error::new(ErrorKind::NomError(format!(
-                    "Line parsing error with code ({}): {}",
+                    "At line: {}. Parsing error with code ({}): {}",
+                    line_no,
                     e.code.description(),
                     str_from_utf8(e.input)?
                 ))))
             }
             nom::Err::Failure(e) => {
                 return Err(Error::new(ErrorKind::NomError(format!(
-                    "Line parsing failure with code ({}): {}",
+                    "At line: {}. Parsing failure with code ({}): {}",
+                    line_no,
                     e.code.description(),
                     str_from_utf8(e.input)?
                 ))))
@@ -246,12 +259,15 @@ pub fn parse_input_line(input: String, record: &mut Record) -> Result<Option<()>
     let tag = str_from_utf8(line_tag)?;
 
     let parsed = str_from_utf8(parsed)?.trim().to_string();
+    // skip empty fields
+    if parsed.is_empty() {
+        return Ok(Some(()));
+    }
 
     match tag {
         "%B " => record.book = Some(parsed),
         "%C " => record.place = Some(parsed),
         "%D " => record.date = Some(parsed),
-        "%E " => record.editor = Some(parsed),
         "%G " => record.government = Some(parsed),
         "%I " => record.issuer = Some(parsed),
         "%J " => record.journal = Some(parsed),
@@ -278,52 +294,71 @@ fn parse_author_tag(i: &[u8]) -> IResult<&[u8], &[u8]> {
 
 // parse %A Author 1 (are there any other special chars apart from -)
 fn parse_author_name(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>> {
+    let sep1 = tag(", ");
+    let sep2 = tag(" ");
     separated_list0(
-        tag(" "),
+        alt((sep1, sep2)),
         // TODO: there are probably other edge cases here
         take_while(|e| is_alphabetic(e) || e == b'-' || e == b'.'),
     )(i)
 }
 
-fn parse_author_line(line: &[u8]) -> Result<Author> {
+fn parse_author_line(line: &[u8], line_no: u64) -> Result<Author> {
     let (_, parsed) = match preceded(parse_author_tag, parse_author_name)(line) {
         Ok(p) => p,
         Err(e) => match e {
             nom::Err::Incomplete(_) => {
-                return Err(Error::new(ErrorKind::NomError(
-                    "In parsing the fields, an incomplete error was raised.".to_string(),
-                )))
+                return Err(Error::new(ErrorKind::NomError(format!(
+                    "At line: {}. In parsing the fields, an incomplete error was raised.",
+                    line_no
+                ))))
             }
             nom::Err::Error(e) => {
                 return Err(Error::new(ErrorKind::NomError(format!(
-                    "Line parsing error with code ({}): {}",
+                    "At line: {}. Parsing error with code ({}): {}",
+                    line_no,
                     e.code.description(),
                     str_from_utf8(e.input)?
                 ))))
             }
             nom::Err::Failure(e) => {
                 return Err(Error::new(ErrorKind::NomError(format!(
-                    "Line parsing failure with code ({}): {}",
+                    "At line: {}. Parsing failure with code ({}): {}",
+                    line_no,
                     e.code.description(),
                     str_from_utf8(e.input)?
                 ))))
             }
         },
     };
+    // make this general over any number of author elements.
     match parsed.len() {
+        0..=1 => {
+            return Err(Error::new(ErrorKind::Author(format!(
+                "Input error: {}. `Number of names should be of length 2 or more, found 0 or 1",
+                str_from_utf8(line)?
+            ))))
+        }
         2 => Ok(Author {
-            first: str_from_utf8(parsed[0])?.to_owned(),
-            middle: None,
-            last: str_from_utf8(parsed[1])?.to_owned(),
+            last: str_from_utf8(parsed[0])?.to_owned(),
+            rest: str_from_utf8(parsed[1])?.to_owned(),
         }),
-        3 => Ok(Author {
-            first: str_from_utf8(parsed[0])?.to_owned(),
-            middle: Some(str_from_utf8(parsed[1])?.to_owned()),
-            last: str_from_utf8(parsed[2])?.to_owned(),
-        }),
+        n @ 3.. => {
+            let mut rest = String::new();
+            for el in parsed.iter().take(n).skip(1) {
+                rest += str_from_utf8(el)?;
+                rest += " ";
+            }
+            rest.pop();
+
+            Ok(Author {
+                last: str_from_utf8(parsed[0])?.to_owned(),
+                rest,
+            })
+        }
         e => {
             return Err(Error::new(ErrorKind::Author(format!(
-                "Input error: {}. `Number of names should be of length 2 or 3, found {}",
+                "Input error: {}. `Number of names should be of length 2 or more, found {}",
                 str_from_utf8(line)?,
                 e
             ))))
@@ -463,27 +498,35 @@ mod tests {
 
     #[test]
     fn test_parse_author_tag() {
-        let author_string = b"%A Max Carter-Brown";
+        let author_string = b"%A Carter-Brown, M.";
         let (parsed, _) = parse_author_tag(author_string).unwrap();
-        assert_eq!(parsed, b"Max Carter-Brown")
+        assert_eq!(parsed, b"Carter-Brown, M.")
     }
 
     #[test]
     fn test_parse_author_name() {
-        let author_string = b"Max Carter-Brown";
+        let author_string = b"Carter-Brown, M.";
         let (_, y) = parse_author_name(author_string).unwrap();
         let res: Vec<&str> = y.iter().map(|e| std::str::from_utf8(e).unwrap()).collect();
 
-        assert_eq!(vec!["Max", "Carter-Brown"], res)
+        assert_eq!(vec!["Carter-Brown", "M."], res)
     }
 
     #[test]
     fn test_parse_author_line() {
-        let author_string = b"%A Max Carter-Brown";
-        let parsed = parse_author_line(author_string).unwrap();
+        let author_string = b"%A Carter-Brown, M.";
+        let parsed = parse_author_line(author_string, 1).unwrap();
 
-        assert_eq!(parsed.first, "Max");
+        assert_eq!(parsed.rest, "M.");
         assert_eq!(parsed.last, "Carter-Brown");
+    }
+
+    #[test]
+    fn test_parse_author_line_one() {
+        let author_string = b"%A Carter-Brown";
+        let parsed = parse_author_line(author_string, 1);
+
+        assert!(parsed.is_err())
     }
 
     #[test]
@@ -498,5 +541,36 @@ mod tests {
                 "word".as_bytes()
             ]
         )
+    }
+
+    #[test]
+    fn parse_input_line_1() {
+        let input = String::from("%B a book");
+        let mut record = Record::default();
+        let _ = parse_input_line(input, &mut record, 0).unwrap();
+
+        let expected_record = Record {
+            book: Some("a book".into()),
+            ..Default::default()
+        };
+
+        assert_eq!(expected_record, record);
+    }
+
+    #[test]
+    fn test_reader_1() {
+        let mut reader = Reader::new("%A Brown, M.\n%T a title\n".as_bytes());
+        let record = reader.records().next().unwrap().unwrap();
+
+        let expected_record = Record {
+            author: vec![Author {
+                last: "Brown".into(),
+                rest: "M.".into(),
+            }],
+            title: Some("a title".into()),
+            ..Default::default()
+        };
+
+        assert_eq!(expected_record, record);
     }
 }
