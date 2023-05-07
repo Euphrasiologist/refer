@@ -11,5 +11,5 @@ refer = { path = "./crates/refer", version = "0.1.0" }
 refer-cli = { path = "./crates/refer-cli", version = "0.1.0" }
 
 [[bin]]
-name = "ref"
+name = "rc"
 path = "src/main.rs"

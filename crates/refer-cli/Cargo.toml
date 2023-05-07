@@ -2,3 +2,7 @@
 name = "refer-cli"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+inquire = { version = "0.6.1", features = ["editor"] }
+pico-args = "0.5.0"
