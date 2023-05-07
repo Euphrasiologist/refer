@@ -179,6 +179,7 @@ impl<R: io::Read> Iterator for RecordsIntoIter<R> {
 }
 
 /// Parse a single line from an input string into a mutable `Record` instance.
+// does not need this return type, can simplify
 pub fn parse_input_line(input: String, record: &mut Record, line_no: u64) -> Result<Option<()>> {
     let bytes = input.as_bytes();
     // parse the authors
@@ -331,7 +332,7 @@ fn parse_author_line(line: &[u8], line_no: u64) -> Result<Author> {
             }
         },
     };
-    // make this general over any number of author elements.
+    
     match parsed.len() {
         0..=1 => {
             return Err(Error::new(ErrorKind::Author(format!(
