@@ -56,10 +56,16 @@ impl StyleBuilder {
                     harvard_date_string(record, &mut a);
 
                     // add the name of the book
-                    if let Some(t) = &record.book {
+                    if let Some(t) = &record.title {
                         a.push_str(t);
                         a.push_str(". ");
                     }
+
+                    // TODO: if we have a book title & editor name
+                    // if let (Some(b), e) = (&record.book, &record.editor) {
+
+                    // }
+
                     // add place
                     if let Some(p) = &record.place {
                         a.push_str(p);

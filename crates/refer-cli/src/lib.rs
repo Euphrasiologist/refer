@@ -1,32 +1,11 @@
-// the command line interface and API for the main ../src/main.rs
-
-// core functionality
-
-// add a record
-// all added records MUST have at least one keyword
-// added records can check existing database for duplicates
-// rc add -j (journal record) -b (book record) --- record input from stdin
-// rc add -s "%A author1\n%A author2" --- add record from string
-// rc add -e --- takes you to an editor (I'll set up helix for this) "/Users/mbrown/.cargo/bin/hx"
-
-// remove a record
-// rc remove (keywords)
-
-// edit a record
-// rc edit (keywords) --- this might bring back a selection
-
-// count how many records there are in the db.
-// rc count
-
-// additional functionality to maybe add later.
-// get records filtering on keywords and title
-// rc filter
-
 use std::ffi::OsString;
 
 mod error;
 mod setup;
-use error::ReferResult;
+use error::{ReferError, ReferErrorKind, ReferResult};
+use setup::setup_rc;
+use status::status_rc;
+mod status;
 
 #[derive(Debug)]
 pub enum AppArgs {
@@ -58,14 +37,17 @@ pub enum AppArgs {
 }
 
 impl AppArgs {
-    fn execute(&self) {
+    fn execute(&self) -> ReferResult<()> {
         match self {
             AppArgs::Global { help } => {
                 if *help {
-                    let print_help = generate_help(VERSION);
+                    let print_help = generate_help_rc(VERSION);
                     eprintln!("{}", print_help);
+                    Ok(())
                 } else {
-                    eprintln!("Unknown argument to rc, pass -h or --help to view help.")
+                    Err(ReferError::new(ReferErrorKind::Cli(
+                        "Unknown argument to rc, pass -h or --help to view help.".into(),
+                    )))
                 }
             }
             AppArgs::Add {
@@ -76,15 +58,15 @@ impl AppArgs {
             } => todo!(),
             AppArgs::Remove { keywords } => todo!(),
             AppArgs::Edit { keywords } => todo!(),
-            AppArgs::Status => todo!(),
-            AppArgs::Setup => todo!(),
+            AppArgs::Status => status_rc(),
+            AppArgs::Setup => setup_rc(),
         }
     }
 }
 
 static VERSION: &str = env!("CARGO_PKG_VERSION");
 
-fn generate_help(version: &str) -> String {
+fn generate_help_rc(version: &str) -> String {
     format!(
         "\
     rc {}
@@ -102,13 +84,14 @@ fn generate_help(version: &str) -> String {
         rc remove <keywords>      - remove an entry from the database
         rc edit <keywords>        - edit an entry in the database
         rc status                 - some stats on the database
-        rc setup                  - initialise an empty database
+        rc setup                  - initialise an empty database. Should 
+                                    only be run once upon installing.
 ",
         version
     )
 }
 
-pub fn cli() -> Result<(), Box<dyn std::error::Error>> {
+pub fn cli() -> ReferResult<()> {
     let mut args = pico_args::Arguments::from_env();
 
     match args.subcommand()?.as_deref() {
@@ -120,7 +103,7 @@ pub fn cli() -> Result<(), Box<dyn std::error::Error>> {
                 editor: args.contains(["-e", "--editor"]),
             };
 
-            pargs.execute();
+            pargs.execute()?;
             Ok(())
         }
         Some("remove") => {
@@ -130,7 +113,7 @@ pub fn cli() -> Result<(), Box<dyn std::error::Error>> {
             match kr {
                 Ok(keywords) => {
                     let pargs = AppArgs::Remove { keywords };
-                    pargs.execute();
+                    pargs.execute()?;
                 }
                 Err(e) => {
                     eprintln!("Could not convert {:?} into string", e);
@@ -147,7 +130,7 @@ pub fn cli() -> Result<(), Box<dyn std::error::Error>> {
             match kr {
                 Ok(keywords) => {
                     let pargs = AppArgs::Remove { keywords };
-                    pargs.execute();
+                    pargs.execute()?;
                 }
                 Err(e) => {
                     eprintln!("Could not convert {:?} into string", e);
@@ -159,21 +142,38 @@ pub fn cli() -> Result<(), Box<dyn std::error::Error>> {
         Some("status") => {
             let pargs = AppArgs::Status;
 
-            pargs.execute();
+            pargs.execute()?;
             Ok(())
         }
         Some("setup") => {
             let pargs = AppArgs::Setup;
-            pargs.execute();
+            pargs.execute()?;
             Ok(())
         }
-        Some(_) => Err("unknown subcommand".into()),
+        Some(e) => Err(ReferError::new(error::ReferErrorKind::Cli(format!(
+            "\"{}\" is an unknown subcommand",
+            e
+        )))),
         None => {
             let pargs = AppArgs::Global {
                 help: args.contains(["-h", "--help"]),
             };
-            pargs.execute();
+            pargs.execute()?;
             Ok(())
         }
     }
+}
+
+pub fn default_refer_location() -> ReferResult<String> {
+    let mut home = match home::home_dir() {
+        Some(h) => h,
+        None => {
+            return Err(ReferError::new(ReferErrorKind::Cli(
+                "could not find the home directory on this system".into(),
+            )))
+        }
+    };
+    home.push(".refer");
+    home.push("bib.refer");
+    Ok(home.to_string_lossy().to_string())
 }

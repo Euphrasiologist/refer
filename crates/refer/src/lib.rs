@@ -1,4 +1,5 @@
 mod error;
+pub use error::Error;
 pub mod reader;
 mod record;
 

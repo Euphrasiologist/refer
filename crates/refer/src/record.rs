@@ -62,6 +62,11 @@ pub struct Record {
 impl Record {
     /// Return the record type of the record. At the moment, only
     /// books and journal types are supported.
+    ///
+    /// Note that the %B field must be non empty (even a space will do)
+    /// for a record to be treated as a book. This is also the case for
+    /// %J, but usually in journal articles the journal is always present,
+    /// whereas a book may not always contain citable articles within.
     pub fn record_type(&self) -> Result<RecordType> {
         let book = self.book.is_some();
         let journal = self.journal.is_some();
