@@ -1,3 +1,4 @@
+use inquire::InquireError;
 use pico_args::Error as PicoError;
 use refer::Error as ReferParseError;
 use std::{error::Error as StdError, fmt, io, result, str};
@@ -36,6 +37,8 @@ pub enum ReferErrorKind {
     ReferParse(ReferParseError),
     /// cli error
     Cli(String),
+    /// cli inquire error specifically
+    Inquire(InquireError),
 }
 
 impl From<io::Error> for ReferError {
@@ -62,6 +65,12 @@ impl From<ReferParseError> for ReferError {
     }
 }
 
+impl From<InquireError> for ReferError {
+    fn from(err: InquireError) -> Self {
+        ReferError::new(ReferErrorKind::Inquire(err))
+    }
+}
+
 impl StdError for ReferError {}
 
 impl fmt::Display for ReferError {
@@ -74,6 +83,7 @@ impl fmt::Display for ReferError {
             ReferErrorKind::ReferParse(ref err) => err.fmt(f),
             ReferErrorKind::Pico(ref err) => err.fmt(f),
             ReferErrorKind::Cli(e) => write!(f, "command line error - {}", e),
+            ReferErrorKind::Inquire(err) => err.fmt(f),
         }
     }
 }

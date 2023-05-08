@@ -1,7 +1,9 @@
 use std::ffi::OsString;
 
+mod add;
 mod error;
 mod setup;
+use add::add_rc;
 use error::{ReferError, ReferErrorKind, ReferResult};
 use setup::setup_rc;
 use status::status_rc;
@@ -55,7 +57,7 @@ impl AppArgs {
                 book,
                 string,
                 editor,
-            } => todo!(),
+            } => add_rc(*journal, *book, string.to_owned(), *editor),
             AppArgs::Remove { keywords } => todo!(),
             AppArgs::Edit { keywords } => todo!(),
             AppArgs::Status => status_rc(),
