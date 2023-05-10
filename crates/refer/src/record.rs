@@ -3,7 +3,7 @@ use std::fmt::Display;
 use crate::error::{Error, ErrorKind, Result};
 
 /// The type of the record, only books and journals are
-/// supported for formatting. See [`crate::style::StyleBuilder`]
+/// supported for formatting. See [`crate::style::StyleBuilder`].
 #[derive(Default, Debug, PartialEq, Clone)]
 pub enum RecordType {
     #[default]
@@ -13,6 +13,8 @@ pub enum RecordType {
 }
 
 /// A refer record.
+///
+/// The record is exhaustive to the refer specification.
 #[derive(Default, Debug, PartialEq, Clone)]
 pub struct Record {
     // TODO: this should probably be option<Vec<..>>

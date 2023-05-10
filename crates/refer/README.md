@@ -39,4 +39,8 @@ fn main() -> Result<(), Box<dyn error::Error>> {
 
 ```
 
-There's also a `refer::Writer` struct for writing `refer` files.
+There's also a `refer::Writer` struct for writing `refer` files. See the documentation for further information on this.
+
+## Thanks
+
+Thanks to BurntSushi/Andrew Gallant for his work on <a href="https://github.com/BurntSushi/rust-csv/tree/master">the csv crate</a>, on which the API/codebase for this current work is designed.

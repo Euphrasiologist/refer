@@ -17,16 +17,73 @@ use crate::{
     str_from_utf8,
 };
 
-/// A refer format reader which works on anything implementing [`io::Read`]
+/// A refer reader.
+///
+/// # Example
+///
+/// The refer reader has a convenient constructor method `from_path`
+/// to read a file from a path. To create a refer reader from a generic
+/// reader, use `Reader::new()`. Below, we just use some bytes.
+///
+/// ```
+/// use std::error::Error;
+/// use refer::{Reader, record::{Author, Record}};
+///
+/// # fn main() { example().unwrap(); }
+/// fn example() -> Result<(), Box<dyn Error>> {
+///     let data = "%A Brown, M.\n%J PNAS\n".as_bytes();
+///
+///     let mut rdr = Reader::new(data);
+///
+///     if let Some(result) = rdr.records().next() {
+///         let record = result?;
+///         assert_eq!(record, Record {
+///             author: vec![Author { last: "Brown".into(), rest: "M.".into() }],
+///             journal: Some("PNAS".into()),
+///             ..Default::default()
+///         });
+///         Ok(())
+///     } else {
+///         Err(From::from("expected at least one record, but got none"))
+///     }
+/// }
+///
+/// ```
+///
+/// # Error handling
+///
+/// Errors can arise in parsing, as records must conform to the refer specification.
+/// However, the specification is not exactly followed, and is a bit more relaxed. Most
+/// fields in a record will return `Option<String>`. For exact details on errors, please
+/// see [`Error`](enum.Error.html).
+///
 pub struct Reader<R> {
     /// The underlying reader.
     rdr: io::BufReader<R>,
+    /// The line number to keep track of errors if we find any.
     line: u64,
 }
 
 impl Reader<File> {
-    /// Create a reader from a path, or anything which can be converted into
-    /// a path.
+    /// Create a reader from a given file path.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use std::error::Error;
+    /// use refer::Reader;
+    ///
+    /// # fn main() { example().unwrap(); }
+    /// fn example() -> Result<(), Box<dyn Error>> {
+    ///     let mut rdr = Reader::from_path("foo.refer")?;
+    ///     for result in rdr.records() {
+    ///         let record = result?;
+    ///         println!("{:?}", record);
+    ///     }
+    ///     Ok(())
+    /// }
+    ///
+    /// ```
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Reader<File>> {
         Ok(Reader::new(File::open(path)?))
     }
@@ -180,7 +237,11 @@ impl<R: io::Read> Iterator for RecordsIntoIter<R> {
 
 /// Parse a single line from an input string into a mutable `Record` instance.
 // does not need this return type, can simplify
-pub fn parse_input_line(input: String, record: &mut Record, line_no: u64) -> Result<Option<()>> {
+pub(crate) fn parse_input_line(
+    input: String,
+    record: &mut Record,
+    line_no: u64,
+) -> Result<Option<()>> {
     let bytes = input.as_bytes();
     // parse the authors
     if let Err(e) = parse_author_line(bytes, line_no) {
@@ -288,12 +349,12 @@ pub fn parse_input_line(input: String, record: &mut Record, line_no: u64) -> Res
     Ok(Some(()))
 }
 
-// parse %A ...
+/// Parse author tag.
 fn parse_author_tag(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%A ")(i)
 }
 
-// parse %A Author 1 (are there any other special chars apart from -)
+// Parse the author name.
 fn parse_author_name(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>> {
     let sep1 = tag(", ");
     let sep2 = tag(" ");
@@ -304,6 +365,7 @@ fn parse_author_name(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>> {
     )(i)
 }
 
+/// Parse the author line.
 fn parse_author_line(line: &[u8], line_no: u64) -> Result<Author> {
     let (_, parsed) = match preceded(parse_author_tag, parse_author_name)(line) {
         Ok(p) => p,
@@ -332,7 +394,7 @@ fn parse_author_line(line: &[u8], line_no: u64) -> Result<Author> {
             }
         },
     };
-    
+
     match parsed.len() {
         0..=1 => {
             return Err(Error::new(ErrorKind::Author(format!(
@@ -367,17 +429,16 @@ fn parse_author_line(line: &[u8], line_no: u64) -> Result<Author> {
     }
 }
 
-// book title needs no further parsing
+/// Parse the book title.
 fn parse_book_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%B ")(i)
 }
-// needs no further parsing
+/// Parse place line.
 fn parse_place_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%C ")(i)
 }
-// should be year (2023), and then month in letters
-// or 'in press'/'unknown'
-// maybe no further parsing required
+
+/// Parse the date line.
 fn parse_date_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%D ")(i)
 }
@@ -386,35 +447,38 @@ fn parse_date_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
 // Where the work has editors and no authors, the names of the editors should be
 // given as %A fields and , (ed) or , (eds) should be appended to the last author.
 // possibly needs same treatment as Author.
+
+/// Parse the editor line.
 fn parse_editor_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%E ")(i)
 }
 
-// %G:  US Government ordering number.
-// not needed for my purposes, no further parsing
+/// Parse US Government ordering number line.
 fn parse_government_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%G ")(i)
 }
 
-// %I:  The publisher (issuer).
+// Parse issuer line.
 fn parse_issuer_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%I ")(i)
 }
 
-// %J:  For an article in a journal, the name of the journal.
+// Parse journal line.
 fn parse_journal_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%J ")(i)
 }
 
-// %K:  Keywords to be used for searching.
+/// Parse keywords tag.
 fn parse_keywords_tag(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%K ")(i)
 }
 
+/// Parse all keywords in a keyword line.
 fn parse_all_keywords(i: &[u8]) -> IResult<&[u8], Vec<&[u8]>> {
     separated_list0(tag(" "), take_while(is_alphabetic))(i)
 }
 
+/// Parse the full keywords line.
 fn parse_keywords_line(i: &[u8]) -> Result<Vec<&[u8]>> {
     let (_, parsed) = match preceded(parse_keywords_tag, parse_all_keywords)(i) {
         Ok(p) => p,
@@ -444,48 +508,52 @@ fn parse_keywords_line(i: &[u8]) -> Result<Vec<&[u8]>> {
     Ok(parsed)
 }
 
-// %L:  Label.
+/// Parse label line.
 fn parse_label_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%L ")(i)
 }
-// %N:  Journal issue number.
+
+/// Parse issue number line.
 fn parse_issue_number_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%N ")(i)
 }
-// %O:  Other information. This is usually printed at the end of the reference.
+
+/// Parse other information line.
 fn parse_other_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%O ")(i)
 }
-// %P:  Page number. A range of pages can be specified as m-n.
+
+// Parse page number line.
 fn parse_page_number_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%P ")(i)
 }
-// %Q:  The name of the author, if the author is not a person. This will only be used if there are no %A fields. There can only be one %Q field.
+
+/// Parse author line (not a person).
 fn parse_author_np_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%Q ")(i)
 }
 
-// %R:  Technical report number.
+/// Parse technical report number line.
 fn parse_report_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%R ")(i)
 }
 
-// %S:  Series name.
+/// Parse series name line.
 fn parse_series_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%S ")(i)
 }
 
-// %T:  Title. For an article in a book or journal, this should be the title of the article.
+/// Parse title line.
 fn parse_title_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%T ")(i)
 }
 
-// %V:  Volume number of the journal or book.
+/// Parse volume line.
 fn parse_volume_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%V ")(i)
 }
 
-// %X:  Annotation.
+/// Parse annotation line.
 fn parse_annotation_line(i: &[u8]) -> IResult<&[u8], &[u8]> {
     tag("%X ")(i)
 }

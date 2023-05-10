@@ -1,11 +1,14 @@
+// Very much a work in progress, please bear with! Or help me?
+
 use crate::{
     error::{Error, ErrorKind, Result},
     record::{Author, Record, RecordType},
 };
 
+/// Create a styled `String` from refer record data.
 #[derive(Debug)]
 pub struct StyleBuilder {
-    /// A record as defined in [Record]
+    /// A record as defined in [`Record`]
     inner: Record,
     /// The styling to use, default is Harvard.
     typ: Style,
@@ -15,6 +18,7 @@ pub struct StyleBuilder {
 }
 
 impl StyleBuilder {
+    /// A new [`StyleBuilder`] object.
     pub fn new(rec: Record) -> Self {
         StyleBuilder {
             inner: rec,
@@ -23,7 +27,7 @@ impl StyleBuilder {
         }
     }
 
-    /// Set the style of the [StyleBuilder]. See [Style] for
+    /// Set the style of the [`StyleBuilder`]. See [`Style`] for
     /// styles.
     pub fn set_style(&mut self, style: Style) {
         self.typ = style;
@@ -134,6 +138,7 @@ impl StyleBuilder {
     }
 }
 
+/// The styles which are currently supported.
 #[derive(Default, Debug)]
 pub enum Style {
     Apa,

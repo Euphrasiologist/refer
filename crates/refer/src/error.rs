@@ -3,8 +3,10 @@ use std::{error::Error as StdError, fmt, io, result, str};
 // I'm aware the error handling is slightly mad
 // first time I have done a lib like this.
 
+/// A type alias for `Result<T, refer::Error>`.
 pub type Result<T> = result::Result<T, Error>;
 
+/// An error that can happen when processing refer data.
 #[derive(Debug)]
 pub struct Error(Box<ErrorKind>);
 
@@ -25,6 +27,7 @@ impl Error {
     }
 }
 
+/// The specific type of error that can occur.
 #[derive(Debug)]
 pub enum ErrorKind {
     /// On any of the I/O things that can go wrong
