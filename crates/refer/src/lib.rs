@@ -44,19 +44,18 @@ fn main() -> Result<(), Box<dyn error::Error>> {
  */
 
 mod error;
-pub use error::Error;
+mod reader;
+mod record;
+mod style;
+mod writer;
 
-pub mod reader;
-pub use reader::Reader;
-
-pub mod record;
-pub use record::{Author, Record};
-
-pub mod style;
-pub use style::StyleBuilder;
-
-pub mod writer;
-pub use writer::Writer;
+pub use crate::{
+    error::Error,
+    reader::{Reader, RecordsIntoIter, RecordsIter},
+    record::{Author, Record},
+    style::{Style, StyleBuilder},
+    writer::Writer,
+};
 
 fn str_from_utf8(input: &[u8]) -> Result<&str, Error> {
     match std::str::from_utf8(input) {

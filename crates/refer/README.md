@@ -10,7 +10,7 @@ Add this to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-refer = "0.1.1"
+refer = "0.1.3"
 ```
 
 ## Example
