@@ -1,7 +1,10 @@
 use crate::{default_refer_location, ReferResult};
-use inquire::Text;
-use refer::Writer;
-use std::fs::OpenOptions;
+use inquire::{Editor, Text};
+use refer::{Reader, Writer};
+use std::{
+    ffi::OsString,
+    fs::{File, OpenOptions},
+};
 
 pub fn add_rc(journal: bool, book: bool, string: Option<String>, editor: bool) -> ReferResult<()> {
     let default_location = default_refer_location()?;
@@ -9,74 +12,111 @@ pub fn add_rc(journal: bool, book: bool, string: Option<String>, editor: bool) -
         .write(true)
         .append(true)
         .open(default_location)?;
-    let mut writer = Writer::new(file);
+    let writer = Writer::new(file);
 
-    eprintln!("Add a journal article to the database:");
-    if journal {
-        let mut record = vec![];
-        loop {
-            let mut author = Text::new("Author").prompt()?;
-            if !author.is_empty() {
-                author.insert_str(0, "%A ");
-                record.push(author);
-            }
-            let skip = inquire::Confirm::new("Finished authors?").prompt()?;
-            if skip {
-                break;
-            }
-        }
-
-        let mut title = Text::new("Title").prompt()?;
-        if !title.is_empty() {
-            title.insert_str(0, "%T ");
-            record.push(title);
-        }
-
-        let mut journal = Text::new("Journal").prompt()?;
-        if !journal.is_empty() {
-            journal.insert_str(0, "%J ");
-            record.push(journal);
-        }
-
-        let mut volume = Text::new("Volume").prompt()?;
-        if !volume.is_empty() {
-            volume.insert_str(0, "%V ");
-            record.push(volume);
-        }
-
-        let mut number = Text::new("Number").prompt()?;
-        if !number.is_empty() {
-            number.insert_str(0, "%N ");
-            record.push(number);
-        }
-
-        let mut date = Text::new("Date").prompt()?;
-        if !date.is_empty() {
-            date.insert_str(0, "%D ");
-            record.push(date);
-        }
-
-        let mut pages = Text::new("Pages").prompt()?;
-        if !pages.is_empty() {
-            pages.insert_str(0, "%P ");
-            record.push(pages);
-        }
-
-        loop {
-            let mut keyword = Text::new("Keywords").prompt()?;
-            if !keyword.is_empty() {
-                keyword.insert_str(0, "%K ");
-                record.push(keyword);
-            }
-            let skip = inquire::Confirm::new("Finished keywords?").prompt()?;
-            if skip {
-                break;
-            }
-        }
-
-        eprintln!("Written the record {:?}", record);
-        writer.write_record(record)?;
+    if let Some(cli_string) = string {
+        write_from_cli_string(cli_string, writer)?;
+    } else if journal {
+        write_journal_record(writer)?;
+    } else if book {
+        todo!()
+    } else if editor {
+        Editor::new("Database entry")
+            // TODO: this needs to come from the refer.toml
+            .with_editor_command(&OsString::from("hx"))
+            .prompt()?;
     }
 
     Ok(())
+}
+
+fn write_from_cli_string(string: String, mut writer: Writer<File>) -> ReferResult<()> {
+    eprintln!("Added ");
+
+    let mut reader = Reader::new(string.as_bytes());
+
+    for result in reader.records() {
+        let record = result?;
+        let checked_record_string = record.to_string();
+        // a bit hacky
+        writer.write_record(vec![checked_record_string])?;
+    }
+
+    writer.flush()?;
+
+    Ok(())
+}
+
+fn write_journal_record(mut writer: Writer<File>) -> ReferResult<()> {
+    eprintln!("Add a journal article to the database:");
+    let mut record = vec![];
+    loop {
+        let mut author = Text::new("Author").prompt()?;
+        if !author.is_empty() {
+            author.insert_str(0, "%A ");
+            record.push(author);
+        }
+        let skip = inquire::Confirm::new("Finished authors?").prompt()?;
+        if skip {
+            break;
+        }
+    }
+
+    let mut title = Text::new("Title").prompt()?;
+    if !title.is_empty() {
+        title.insert_str(0, "%T ");
+        record.push(title);
+    }
+
+    let mut journal = Text::new("Journal").prompt()?;
+    if !journal.is_empty() {
+        journal.insert_str(0, "%J ");
+        record.push(journal);
+    }
+
+    let mut volume = Text::new("Volume").prompt()?;
+    if !volume.is_empty() {
+        volume.insert_str(0, "%V ");
+        record.push(volume);
+    }
+
+    let mut number = Text::new("Number").prompt()?;
+    if !number.is_empty() {
+        number.insert_str(0, "%N ");
+        record.push(number);
+    }
+
+    let mut date = Text::new("Date").prompt()?;
+    if !date.is_empty() {
+        date.insert_str(0, "%D ");
+        record.push(date);
+    }
+
+    let mut pages = Text::new("Pages").prompt()?;
+    if !pages.is_empty() {
+        pages.insert_str(0, "%P ");
+        record.push(pages);
+    }
+
+    loop {
+        let mut keyword = Text::new("Keywords").prompt()?;
+        if !keyword.is_empty() {
+            keyword.insert_str(0, "%K ");
+            record.push(keyword);
+        }
+        let skip = inquire::Confirm::new("Finished keywords?").prompt()?;
+        if skip {
+            break;
+        }
+    }
+
+    eprintln!("Written the record {:?}", record);
+    writer.write_record(record)?;
+    writer.flush()?;
+
+    Ok(())
+}
+
+fn write_book_record(mut writer: Writer<File>) {
+    todo!()
 }

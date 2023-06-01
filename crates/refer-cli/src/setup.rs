@@ -1,7 +1,7 @@
 // set up the file system and the database file
 
 use crate::{ReferError, ReferErrorKind, ReferResult};
-use std::{env, fs};
+use std::{env, fs, io::Write};
 
 pub fn setup_rc() -> ReferResult<()> {
     let mut refer_directory = match home::home_dir() {
@@ -21,13 +21,33 @@ pub fn setup_rc() -> ReferResult<()> {
         Err(e) => eprintln!("Warning: for ~/.refer/ - {}", e),
     };
 
-    // now create the database file
-    refer_directory.push("bib.refer");
+    // create the config file
+    let mut config_default = refer_directory.clone();
+    config_default.push("rc.toml");
     match fs::File::options()
         .read(true)
         .write(true)
         .create_new(true)
-        .open(refer_directory.clone())
+        .open(config_default)
+    {
+        Ok(mut f) => {
+            // add defaults to file here
+            f.write_all(b"# rc configuration file")?;
+            // nano default editor
+            f.write_all(b"editor = \"nano\"")?;
+            // TODO: what else we want to add to the rc.toml?
+        }
+        Err(e) => eprintln!("Warning: for ~/.refer/rc.toml - {}", e),
+    }
+
+    // now create the database file
+    let mut database_default = refer_directory.clone();
+    database_default.push("bib.refer");
+    match fs::File::options()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(database_default)
     {
         Ok(_) => (),
         Err(e) => eprintln!("Warning: for ~/.refer/bib.refer - {}", e),
