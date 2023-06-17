@@ -103,24 +103,24 @@ static VERSION: &str = env!("CARGO_PKG_VERSION");
 fn generate_help_rc(version: &str) -> String {
     format!(
         "\
-    rc {}
-    Max Brown <euphrasiamax@gmail.com>
-    https://github.com/euphrasiologist/refer
+rc {}
+Max Brown <euphrasiamax@gmail.com>
+https://github.com/euphrasiologist/refer
 
-    USAGE:
-        rc [-h] [subcommand] [options]
+USAGE:
+    rc [-h] [subcommand] [options]
 
-        rc add [-jbe -s <string>] - add an entry to the database
-                                  - [-j] flag. is a journal
-                                  - [-b] flag. is a book
-                                  - [-e] flag. use an editor to add an entry
-                                  - [-s] option. provide a string as an arg
-        rc remove <keywords>      - remove an entry from the database
-        rc edit [-a <keywords>]   - edit an entry in the database
-                                  - [-a] flag. select from all entries
-        rc status                 - some stats on the database
-        rc setup                  - initialise an empty database. Should 
-                                    only be run once upon installing.
+    rc add [-jbe -s <string>] - add an entry to the database
+                              - [-j] flag. is a journal
+                              - [-b] flag. is a book
+                              - [-e] flag. use an editor to add an entry
+                              - [-s] option. provide a string as an arg
+    rc remove <keywords>      - remove an entry from the database
+    rc edit [-a <keywords>]   - edit an entry in the database
+                              - [-a] flag. select from all entries
+    rc status                 - some stats on the database
+    rc setup                  - initialise an empty database. Should 
+                                only be run once upon installing.
 ",
         version
     )
