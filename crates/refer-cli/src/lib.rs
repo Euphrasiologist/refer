@@ -1,4 +1,4 @@
-use std::ffi::OsString;
+use std::{ffi::OsString, fmt::Display, str::FromStr};
 
 mod add;
 mod error;
@@ -7,6 +7,9 @@ use add::add_rc;
 use error::{ReferError, ReferErrorKind, ReferResult};
 use setup::setup_rc;
 use status::status_rc;
+mod edit;
+use edit::edit_rc;
+use toml::Table;
 mod status;
 
 #[derive(Debug)]
@@ -27,19 +30,28 @@ pub enum AppArgs {
         // open an editor (nano, vim, helix...) to add to the db
         editor: bool,
     },
-    // remove a
+    // remove an entry based on keywords/title match
     Remove {
         keywords: Vec<String>,
     },
+    // edit an entry based on keywords/title match
     Edit {
         keywords: Vec<String>,
+        all: bool,
     },
+    // this just counts records currently
     Status,
+    // sets up a database
     Setup,
+    // clear the database
+    Clear,
 }
 
 impl AppArgs {
     fn execute(&self) -> ReferResult<()> {
+        // evaluate editor used
+        // possibly evaluate elsewhere...
+        let editor_exec = read_editor()?;
         match self {
             AppArgs::Global { help } => {
                 if *help {
@@ -57,11 +69,31 @@ impl AppArgs {
                 book,
                 string,
                 editor,
-            } => add_rc(*journal, *book, string.to_owned(), *editor),
+            } => {
+                let opts = vec![journal, book, &string.is_some(), editor]
+                    .into_iter()
+                    .count();
+                if opts > 1 {
+                    return Err(ReferError::new(ReferErrorKind::Cli(
+                        "for `rc add`, only one of journal, book, string, or editor may be specifed on the cli"
+                            .into(),
+                    )));
+                }
+                add_rc(*journal, *book, string.to_owned(), *editor, editor_exec)
+            }
             AppArgs::Remove { keywords } => todo!(),
-            AppArgs::Edit { keywords } => todo!(),
+            AppArgs::Edit { keywords, all } => {
+                // check cli args here
+                if keywords.is_empty() && !all {
+                    return Err(ReferError::new(ReferErrorKind::Cli(
+                        "`rc edit` must have at least one keyword, or pass the -a flag".into(),
+                    )));
+                }
+                edit_rc(keywords, all, editor_exec)
+            }
             AppArgs::Status => status_rc(),
             AppArgs::Setup => setup_rc(),
+            AppArgs::Clear => todo!(),
         }
     }
 }
@@ -79,12 +111,13 @@ fn generate_help_rc(version: &str) -> String {
         rc [-h] [subcommand] [options]
 
         rc add [-jbe -s <string>] - add an entry to the database
-                                  - [-j] is a journal
-                                  - [-b] is a book
-                                  - [-e] use an editor to add an entry
-                                  - [-s] provide a string as an arg
+                                  - [-j] flag. is a journal
+                                  - [-b] flag. is a book
+                                  - [-e] flag. use an editor to add an entry
+                                  - [-s] option. provide a string as an arg
         rc remove <keywords>      - remove an entry from the database
-        rc edit <keywords>        - edit an entry in the database
+        rc edit [-a <keywords>]   - edit an entry in the database
+                                  - [-a] flag. select from all entries
         rc status                 - some stats on the database
         rc setup                  - initialise an empty database. Should 
                                     only be run once upon installing.
@@ -126,12 +159,17 @@ pub fn cli() -> ReferResult<()> {
             Ok(())
         }
         Some("edit") => {
-            let kr: Result<Vec<String>, OsString> =
-                args.finish().into_iter().map(|e| e.into_string()).collect();
+            let kr: Result<Vec<String>, OsString> = args
+                .clone()
+                .finish()
+                .into_iter()
+                .map(|e| e.into_string())
+                .collect();
+            let all = args.contains(["-a", "--all"]);
 
             match kr {
                 Ok(keywords) => {
-                    let pargs = AppArgs::Remove { keywords };
+                    let pargs = AppArgs::Edit { keywords, all };
                     pargs.execute()?;
                 }
                 Err(e) => {
@@ -178,4 +216,55 @@ pub fn default_refer_location() -> ReferResult<String> {
     home.push(".refer");
     home.push("bib.refer");
     Ok(home.to_string_lossy().to_string())
+}
+
+pub enum ReferEditor {
+    Nano,
+    Helix,
+}
+
+impl FromStr for ReferEditor {
+    type Err = ReferError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "nano" => Ok(Self::Nano),
+            "hx" => Ok(Self::Helix),
+            _ => Err(ReferError::new(ReferErrorKind::CatchAll(
+                "the refer editor can currently only be either nano or helix".into(),
+            ))),
+        }
+    }
+}
+
+impl Display for ReferEditor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReferEditor::Nano => write!(f, "nano"),
+            ReferEditor::Helix => write!(f, "hx"),
+        }
+    }
+}
+
+fn read_editor() -> ReferResult<ReferEditor> {
+    let mut config_path = match home::home_dir() {
+        Some(h) => h,
+        None => {
+            return Err(ReferError::new(ReferErrorKind::Cli(
+                "could not find the home directory on this system".into(),
+            )))
+        }
+    };
+    config_path.push(".refer");
+    config_path.push("rc.toml");
+
+    // open the config
+    match std::fs::read_to_string(config_path) {
+        Ok(c) => {
+            let config = c.parse::<Table>()?;
+            // assuming here that the config is written correctly.
+            ReferEditor::from_str(config["editor"].as_str().unwrap_or("nano"))
+        }
+        Err(_) => ReferEditor::from_str("nano"),
+    }
 }

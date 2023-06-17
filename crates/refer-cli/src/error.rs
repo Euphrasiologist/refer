@@ -2,6 +2,7 @@ use inquire::InquireError;
 use pico_args::Error as PicoError;
 use refer::Error as ReferParseError;
 use std::{error::Error as StdError, fmt, io, result, str};
+use toml::de::Error as TomlError;
 
 pub type ReferResult<T> = result::Result<T, ReferError>;
 
@@ -39,6 +40,10 @@ pub enum ReferErrorKind {
     Cli(String),
     /// cli inquire error specifically
     Inquire(InquireError),
+    /// catch all error
+    CatchAll(String),
+    /// Toml errors
+    Toml(TomlError),
 }
 
 impl From<io::Error> for ReferError {
@@ -71,6 +76,12 @@ impl From<InquireError> for ReferError {
     }
 }
 
+impl From<TomlError> for ReferError {
+    fn from(err: TomlError) -> Self {
+        ReferError::new(ReferErrorKind::Toml(err))
+    }
+}
+
 impl StdError for ReferError {}
 
 impl fmt::Display for ReferError {
@@ -84,6 +95,8 @@ impl fmt::Display for ReferError {
             ReferErrorKind::Pico(ref err) => err.fmt(f),
             ReferErrorKind::Cli(e) => write!(f, "command line error - {}", e),
             ReferErrorKind::Inquire(err) => err.fmt(f),
+            ReferErrorKind::Toml(err) => err.fmt(f),
+            ReferErrorKind::CatchAll(e) => write!(f, "catch all error - {}", e),
         }
     }
 }

@@ -32,7 +32,7 @@ pub fn setup_rc() -> ReferResult<()> {
     {
         Ok(mut f) => {
             // add defaults to file here
-            f.write_all(b"# rc configuration file")?;
+            f.write_all(b"# rc configuration file\n")?;
             // nano default editor
             f.write_all(b"editor = \"nano\"")?;
             // TODO: what else we want to add to the rc.toml?

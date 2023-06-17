@@ -50,7 +50,7 @@ mod style;
 mod writer;
 
 pub use crate::{
-    error::Error,
+    error::{Error, ErrorKind},
     reader::{Reader, RecordsIntoIter, RecordsIter},
     record::{Author, Record},
     style::{Style, StyleBuilder},

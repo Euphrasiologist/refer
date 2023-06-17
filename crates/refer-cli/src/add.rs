@@ -1,4 +1,4 @@
-use crate::{default_refer_location, ReferResult};
+use crate::{default_refer_location, ReferEditor, ReferResult};
 use inquire::{Editor, Text};
 use refer::{Reader, Writer};
 use std::{
@@ -6,7 +6,13 @@ use std::{
     fs::{File, OpenOptions},
 };
 
-pub fn add_rc(journal: bool, book: bool, string: Option<String>, editor: bool) -> ReferResult<()> {
+pub fn add_rc(
+    journal: bool,
+    book: bool,
+    string: Option<String>,
+    editor: bool,
+    editor_exec: ReferEditor,
+) -> ReferResult<()> {
     let default_location = default_refer_location()?;
     let file = OpenOptions::new()
         .write(true)
@@ -15,34 +21,35 @@ pub fn add_rc(journal: bool, book: bool, string: Option<String>, editor: bool) -
     let writer = Writer::new(file);
 
     if let Some(cli_string) = string {
-        write_from_cli_string(cli_string, writer)?;
+        write_from_cli_or_editor_string(cli_string, writer)?;
     } else if journal {
         write_journal_record(writer)?;
     } else if book {
+        // TODO: implement this.
         todo!()
     } else if editor {
-        Editor::new("Database entry")
-            // TODO: this needs to come from the refer.toml
-            .with_editor_command(&OsString::from("hx"))
+        let ee = editor_exec.to_string();
+        let edited_string = Editor::new("Database entry")
+            .with_editor_command(&OsString::from(ee))
             .prompt()?;
+
+        write_from_cli_or_editor_string(edited_string, writer)?;
     }
 
     Ok(())
 }
 
-fn write_from_cli_string(string: String, mut writer: Writer<File>) -> ReferResult<()> {
-    eprintln!("Added ");
-
+fn write_from_cli_or_editor_string(string: String, mut writer: Writer<File>) -> ReferResult<()> {
     let mut reader = Reader::new(string.as_bytes());
 
     for result in reader.records() {
         let record = result?;
         let checked_record_string = record.to_string();
-        // a bit hacky
         writer.write_record(vec![checked_record_string])?;
     }
 
     writer.flush()?;
+    eprintln!("Successfully added to database from cli/editor string.");
 
     Ok(())
 }
