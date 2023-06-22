@@ -103,8 +103,6 @@ https://github.com/euphrasiologist/refer
 
 USAGE:
     rc [-h] [subcommand] [options]
-USAGE:
-    rc [-h] [subcommand] [options]
 
     rc add [-jbe -s <string>] - add an entry to the database
                               - [-j] flag. is a journal
