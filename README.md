@@ -36,7 +36,6 @@ USAGE:
                               - [-b] flag. is a book
                               - [-e] flag. use an editor to add an entry
                               - [-s] option. provide a string as an arg
-    rc remove <keywords>      - remove an entry from the database
     rc edit [-a <keywords>]   - edit/remove an entry in the database
                               - [-a] flag. select from all entries
     rc status                 - some stats on the database. Mainly for
