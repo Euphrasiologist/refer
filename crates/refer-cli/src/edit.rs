@@ -1,9 +1,7 @@
 use std::ffi::{OsStr, OsString};
 
 use crate::{
-    default_refer_location,
-    error::{ReferError, ReferErrorKind},
-    ReferEditor, ReferResult,
+    default_refer_location, matches_from_keywords, CheckedRecord, ReferEditor, ReferResult,
 };
 use inquire::{Editor, Select};
 use refer::{Error as InnerReferError, Reader};
@@ -20,7 +18,7 @@ pub fn edit_rc(keywords: &[String], all: &bool, editor_exec: ReferEditor) -> Ref
         // choose a title
         let checked_titles = titles?
             .iter()
-            .map(|e| e.clone().unwrap_or("".into()))
+            .map(|e| e.clone().unwrap_or_else(|| "".into()))
             .filter(|e| !e.is_empty())
             .collect();
         let r_selection = Select::new("Title: ", checked_titles).prompt();
@@ -32,7 +30,7 @@ pub fn edit_rc(keywords: &[String], all: &bool, editor_exec: ReferEditor) -> Ref
         let mut reader = Reader::from_path(default_location.clone())?;
         for result in reader.records() {
             let record = result?;
-            let tmp_title = record.clone().title.unwrap_or("".into());
+            let tmp_title = record.clone().title.unwrap_or_else(|| "".into());
             // if we hit the title
             if tmp_title == selection {
                 let ee = editor_exec.to_string();
@@ -65,42 +63,7 @@ pub fn edit_rc(keywords: &[String], all: &bool, editor_exec: ReferEditor) -> Ref
             line_no += &record.to_string().lines().count() + 2;
         }
     } else {
-        let choices: Result<Vec<_>, ReferError> = reader
-            .records()
-            .filter_map(|e| {
-                let x = e.as_ref().map(|f| {
-                    let title = f.clone().title.unwrap_or("".into());
-                    let kw = f.clone().keywords.unwrap_or(vec!["".into()]);
-                    // now check if either the title or kw appear in keywords
-                    let in_title = keywords.iter().any(|i| i == &title);
-                    let in_kw = keywords.iter().any(|i| kw.contains(i));
-
-                    in_kw || in_title
-                });
-                match x {
-                    Ok(bool_res) => match bool_res {
-                        true => match e {
-                            Ok(ele) => Some(Ok(ele)),
-                            Err(err) => Some(Err(ReferError::new(ReferErrorKind::ReferParse(err)))),
-                        },
-                        false => None,
-                    },
-                    Err(err) => Some(Err(ReferError::new(ReferErrorKind::CatchAll(format!(
-                        "error in parsing a record, {}",
-                        err
-                    ))))),
-                }
-            })
-            .collect();
-
-        let checked_titles: Vec<String> = choices?
-            .iter()
-            .map(|e| e.title.clone().unwrap_or("".into()))
-            .filter(|e| !e.is_empty())
-            .collect();
-
-        let r_selection = Select::new("Title: ", checked_titles).prompt();
-        let selection = r_selection?;
+        let CheckedRecord { title, styled: _ } = matches_from_keywords(reader, keywords)?;
 
         // find the line number of the match
         let mut line_no = 0;
@@ -108,9 +71,9 @@ pub fn edit_rc(keywords: &[String], all: &bool, editor_exec: ReferEditor) -> Ref
         let mut reader = Reader::from_path(default_location.clone())?;
         for result in reader.records() {
             let record = result?;
-            let tmp_title = record.clone().title.unwrap_or("".into());
+            let tmp_title = record.clone().title.unwrap_or_else(|| "".into());
             // if we hit the title
-            if tmp_title == selection {
+            if tmp_title == title {
                 let ee = editor_exec.to_string();
 
                 let mut editor = Editor::new("Found reference");
@@ -138,5 +101,3 @@ pub fn edit_rc(keywords: &[String], all: &bool, editor_exec: ReferEditor) -> Ref
     }
     Ok(())
 }
-
-fn edit_ui() {}

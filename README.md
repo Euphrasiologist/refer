@@ -4,9 +4,11 @@
 
 References can be added, edited, deleted, or styled (limited styling at the moment).
 
+Not production quality or anything, just a side project.
+
 # Install
 
-Currently only available here on GitHub.
+Currently only available here on GitHub. Might put on crates.io soon.
 
 ```bash
 # do the usual stuff.
@@ -22,7 +24,7 @@ Simple API, no helps currently within subcommands.
 Run `rc -h` (5 chars!) to get this help.
 
 ```
-rc 0.1.0
+rc 1.0.0
 Max Brown <euphrasiamax@gmail.com>
 https://github.com/euphrasiologist/refer
 
@@ -35,9 +37,10 @@ USAGE:
                               - [-e] flag. use an editor to add an entry
                               - [-s] option. provide a string as an arg
     rc remove <keywords>      - remove an entry from the database
-    rc edit [-a <keywords>]   - edit an entry in the database
+    rc edit [-a <keywords>]   - edit/remove an entry in the database
                               - [-a] flag. select from all entries
-    rc status                 - some stats on the database
+    rc status                 - some stats on the database. Mainly for
+                                debugging.
     rc setup                  - initialise an empty database. Should 
                                 only be run once upon installing.
 ```

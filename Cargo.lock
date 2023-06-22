@@ -284,7 +284,7 @@ dependencies = [
 
 [[package]]
 name = "rc"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "refer",
  "refer-cli",
@@ -317,7 +317,7 @@ dependencies = [
 
 [[package]]
 name = "refer-cli"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "home",
  "inquire",

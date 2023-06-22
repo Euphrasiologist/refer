@@ -1,15 +1,17 @@
-use std::{ffi::OsString, fmt::Display, str::FromStr};
-
-mod add;
-mod error;
-mod setup;
 use add::add_rc;
+use edit::edit_rc;
 use error::{ReferError, ReferErrorKind, ReferResult};
+use inquire::{formatter::OptionFormatter, Select};
+use refer::{Error as InnerReferError, Reader, StyleBuilder};
 use setup::setup_rc;
 use status::status_rc;
-mod edit;
-use edit::edit_rc;
+use std::{ffi::OsString, fmt::Display, fs::File, str::FromStr};
 use toml::Table;
+
+mod add;
+mod edit;
+mod error;
+mod setup;
 mod status;
 
 #[derive(Debug)]
@@ -30,10 +32,6 @@ pub enum AppArgs {
         // open an editor (nano, vim, helix...) to add to the db
         editor: bool,
     },
-    // remove an entry based on keywords/title match
-    Remove {
-        keywords: Vec<String>,
-    },
     // edit an entry based on keywords/title match
     Edit {
         keywords: Vec<String>,
@@ -43,8 +41,6 @@ pub enum AppArgs {
     Status,
     // sets up a database
     Setup,
-    // clear the database
-    Clear,
 }
 
 impl AppArgs {
@@ -60,7 +56,7 @@ impl AppArgs {
                     Ok(())
                 } else {
                     Err(ReferError::new(ReferErrorKind::Cli(
-                        "Unknown argument to rc, pass -h or --help to view help.".into(),
+                        "Unknown argument to rc, pass -h or --help to view help".into(),
                     )))
                 }
             }
@@ -81,7 +77,6 @@ impl AppArgs {
                 }
                 add_rc(*journal, *book, string.to_owned(), *editor, editor_exec)
             }
-            AppArgs::Remove { keywords } => todo!(),
             AppArgs::Edit { keywords, all } => {
                 // check cli args here
                 if keywords.is_empty() && !all {
@@ -93,7 +88,6 @@ impl AppArgs {
             }
             AppArgs::Status => status_rc(),
             AppArgs::Setup => setup_rc(),
-            AppArgs::Clear => todo!(),
         }
     }
 }
@@ -109,6 +103,8 @@ https://github.com/euphrasiologist/refer
 
 USAGE:
     rc [-h] [subcommand] [options]
+USAGE:
+    rc [-h] [subcommand] [options]
 
     rc add [-jbe -s <string>] - add an entry to the database
                               - [-j] flag. is a journal
@@ -116,9 +112,10 @@ USAGE:
                               - [-e] flag. use an editor to add an entry
                               - [-s] option. provide a string as an arg
     rc remove <keywords>      - remove an entry from the database
-    rc edit [-a <keywords>]   - edit an entry in the database
+    rc edit [-a <keywords>]   - edit/remove an entry in the database
                               - [-a] flag. select from all entries
-    rc status                 - some stats on the database
+    rc status                 - some stats on the database. Mainly for
+                                debugging.
     rc setup                  - initialise an empty database. Should 
                                 only be run once upon installing.
 ",
@@ -139,23 +136,6 @@ pub fn cli() -> ReferResult<()> {
             };
 
             pargs.execute()?;
-            Ok(())
-        }
-        Some("remove") => {
-            let kr: Result<Vec<String>, OsString> =
-                args.finish().into_iter().map(|e| e.into_string()).collect();
-
-            match kr {
-                Ok(keywords) => {
-                    let pargs = AppArgs::Remove { keywords };
-                    pargs.execute()?;
-                }
-                Err(e) => {
-                    eprintln!("Could not convert {:?} into string", e);
-                    std::process::exit(1);
-                }
-            }
-
             Ok(())
         }
         Some("edit") => {
@@ -267,4 +247,90 @@ fn read_editor() -> ReferResult<ReferEditor> {
         }
         Err(_) => ReferEditor::from_str("nano"),
     }
+}
+
+pub struct CheckedRecord {
+    title: String,
+    styled: Result<String, InnerReferError>,
+}
+
+impl Display for CheckedRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match &self.styled {
+            Ok(st) => st.clone(),
+            Err(_) => "Could not format this reference".into(),
+        };
+        write!(f, "{}", s)
+    }
+}
+
+// from a database of records, return a choice matching the keywords
+// return the title of the record as a string
+pub fn matches_from_keywords(
+    mut reader: Reader<File>,
+    keywords: &[String],
+) -> ReferResult<CheckedRecord> {
+    let choices: Result<Vec<_>, ReferError> = reader
+        .records()
+        .filter_map(|e| {
+            let x = e.as_ref().map(|f| {
+                let record = f.to_string().to_ascii_uppercase();
+                let mut record_contains = false;
+                for kw in keywords {
+                    let up_kw = kw.to_ascii_uppercase();
+                    if record.contains(&up_kw) {
+                        record_contains = true;
+                        break;
+                    } else {
+                        record_contains = false;
+                    }
+                }
+
+                record_contains
+            });
+            match x {
+                Ok(bool_res) => match bool_res {
+                    true => match e {
+                        Ok(ele) => Some(Ok(ele)),
+                        Err(err) => Some(Err(ReferError::new(ReferErrorKind::ReferParse(err)))),
+                    },
+                    false => None,
+                },
+                Err(err) => Some(Err(ReferError::new(ReferErrorKind::CatchAll(format!(
+                    "error in parsing a record, {}",
+                    err
+                ))))),
+            }
+        })
+        .collect();
+
+    let checked_titles: Vec<CheckedRecord> = choices?
+        .iter()
+        .map(|e| {
+            let formatted_record = StyleBuilder::new(e.clone()).format();
+            let title = e.title.clone().unwrap_or_else(|| "".into());
+            CheckedRecord {
+                title,
+                styled: formatted_record,
+            }
+        })
+        .filter(|CheckedRecord { title, styled: _ }| !title.is_empty())
+        .collect();
+
+    let formatter: OptionFormatter<CheckedRecord> = &|i| {
+        //
+        let CheckedRecord { title, styled } = i.value;
+
+        match styled {
+            Ok(s) => s.clone(),
+            // otherwise fall back on the title
+            Err(_) => title.clone(),
+        }
+    };
+
+    let r_selection = Select::new("Title: ", checked_titles)
+        .with_formatter(formatter)
+        .prompt();
+
+    r_selection.map_err(|err| err.into())
 }

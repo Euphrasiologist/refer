@@ -124,6 +124,7 @@ fn write_journal_record(mut writer: Writer<File>) -> ReferResult<()> {
     Ok(())
 }
 
+#[allow(unused_variables, unused_mut, dead_code)]
 fn write_book_record(mut writer: Writer<File>) {
     todo!()
 }
